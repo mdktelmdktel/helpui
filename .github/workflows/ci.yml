@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux and Windows are both exercised because HelpUI's generated
+        # projects and its golden tests are sensitive to platform differences:
+        # line endings (CRLF vs LF) and the POSIX-only memory limit.
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: python -m ruff check .
+
+      - name: Type check (mypy)
+        run: python -m mypy helpui
+
+      - name: Test (pytest)
+        run: python -m pytest -q
+
+      - name: Smoke test the CLI contract
+        shell: bash
+        run: |
+          # `scan --json` must be pipeable: exactly one JSON document on stdout.
+          helpui scan tests/fixtures/sample_argparse.py --json > spec.json
+          python -c "import json;d=json.load(open('spec.json'));assert d['ok']=='true',d"
+          python -c "import json;d=json.load(open('spec.json'));assert d['spec']['parser_kind']=='argparse',d"
+          python -c "import json;d=json.load(open('spec.json'));assert len(d['spec']['commands'])==3,d"
+
+          # The full chain: generate, then smoke-test the generated project.
+          helpui generate tests/fixtures/sample_click.py --out generated --port 8123
+          helpui test generated | tee selftest.json
+          python -c "
+          import json
+          d = json.load(open('selftest.json'))
+          assert d['ok'] == 'true', d
+          assert len(d['checks']) >= 9, d
+          assert all(c['ok'] for c in d['checks']), [c for c in d['checks'] if not c['ok']]
+          "

@@ -34,11 +34,11 @@ the runtime are all in place.
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Model, parsers (argparse/click/typer), detector, `scan` CLI | ✅ Complete |
-| 2 | Generator, golden tests | ✅ Complete |
-| 3 | Runtime: FastAPI app, forms, live logs, result rendering | ✅ Complete |
-| 4 | History, downloads, cancel, timeout, security layer | ✅ Complete |
-| 5 | `helpui test`, end-to-end suite, docs | ✅ Complete |
+| 1 | Model, parsers (argparse/click/typer), detector, `scan` CLI | Complete |
+| 2 | Generator, golden tests | Complete |
+| 3 | Runtime: FastAPI app, forms, live logs, result rendering | Complete |
+| 4 | History, downloads, cancel, timeout, security layer | Complete |
+| 5 | `helpui test`, end-to-end suite, docs | Complete |
 
 The four commands are all live: `scan`, `generate`, `serve` and `test`. Nothing
 in `--help` is a stub any more.
@@ -392,7 +392,15 @@ A **generated project** (what `helpui generate` writes, 24 files) looks like:
   traceback — `unknown_framework` is a first-class result, not an afterthought.
 * **A partially useful form beats a crash.** Parsers never raise on malformed
   help; they extract what they can and ignore the rest.
+* **Generated projects stand alone.** Templates and assets are copied verbatim,
+  htmx is bundled locally, and nothing generated imports HelpUI.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the check commands, test
+conventions, and how the two halves of the codebase relate
+(HelpUI itself vs. the code it generates).
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

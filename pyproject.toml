@@ -9,12 +9,35 @@ description = "Generate a local WebUI for any non-interactive CLI tool, just fro
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+keywords = ["cli", "help", "argparse", "click", "typer", "fastapi", "htmx", "webui", "codegen"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: User Interfaces",
+    "Typing :: Typed",
+]
 dependencies = [
     "fastapi>=0.110",
     "jinja2>=3.1",
     "uvicorn>=0.27",
     "python-multipart>=0.0.9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/OWNER/helpui"
+Repository = "https://github.com/OWNER/helpui"
+Issues = "https://github.com/OWNER/helpui/issues"
+Changelog = "https://github.com/OWNER/helpui/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/OWNER/helpui/blob/main/SPEC.md"
 
 [project.optional-dependencies]
 dev = [

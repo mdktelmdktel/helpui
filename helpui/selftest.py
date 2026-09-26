@@ -325,7 +325,11 @@ def run_project_tests(project_dir: str | Path, *, timeout: float = 60.0) -> Self
 
     ``timeout`` bounds the child process that drives the project.
     """
-    target = Path(project_dir).expanduser()
+    # Resolve to an absolute path immediately: the probe below runs with
+    # `cwd=<target>`, so a relative `project_dir` like "generated" would make the
+    # child look for "generated/generated/spec.json". Resolving here keeps the
+    # natural invocation (`helpui test generated`) working from any directory.
+    target = Path(project_dir).expanduser().resolve()
     result = SelfTestResult(ok=False, project_dir=str(target))
 
     # -- pre-flight: is there even a project here? --------------------------

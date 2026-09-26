@@ -112,7 +112,7 @@ def main() -> int:
 
     tmp = Path(tempfile.mkdtemp(prefix="helpui_t6_"))
     project = tmp / "project"
-    generate_project(scan_tool(str(REPO / "scripts" / "_slow_tool.py")).spec, project)
+    generate_project(scan_tool(str(REPO / "scripts" / "slow_tool.py")).spec, project)
 
     result = _run(project, PROBE, {})
     if "error" in result:
@@ -143,7 +143,7 @@ def main() -> int:
 
     # Size limit, with a deliberately tiny cap via env.
     small = tmp / "project_small"
-    generate_project(scan_tool(str(REPO / "scripts" / "_slow_tool.py")).spec, small)
+    generate_project(scan_tool(str(REPO / "scripts" / "slow_tool.py")).spec, small)
     sized = _run(small, SIZE_PROBE, {"HELPUI_MAX_UPLOAD_BYTES": "1024"})
     if "error" in sized:
         print(f"upload_size_limit: FAIL {sized}")

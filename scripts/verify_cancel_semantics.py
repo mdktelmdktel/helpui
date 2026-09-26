@@ -30,7 +30,7 @@ from helpui.generator import generate_project  # noqa: E402
 from helpui.scanner_service import scan_tool  # noqa: E402
 
 project = Path(sys.argv[1])
-generate_project(scan_tool(str(REPO / "scripts" / "_slow_tool.py")).spec, project, force=True)
+generate_project(scan_tool(str(REPO / "scripts" / "slow_tool.py")).spec, project, force=True)
 
 
 def record(server: Server, run_id: int) -> dict:

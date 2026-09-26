@@ -9,6 +9,8 @@
 
 ## [0.1.0] - 2026-09-26
 
+本版本由 mdktelmdktel 与 ds老师 协作完成。
+
 首个可用版本。计划的五个阶段全部完成：解析、生成、运行时、历史记录/安全，
 以及自检命令。
 
@@ -100,5 +102,5 @@
 - `HELPUI_TIMEOUT=0` 或负值行为未定义。
 - 忽略 `NO_COLOR` / `TERM=dumb` 的工具可能输出 ANSI 转义码。
 
-[未发布]: https://github.com/OWNER/helpui/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/OWNER/helpui/releases/tag/v0.1.0
+[Unreleased]: https://github.com/mdktelmdktel/helpui/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/mdktelmdktel/helpui/releases/tag/v0.1.0

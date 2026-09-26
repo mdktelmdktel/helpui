@@ -375,6 +375,7 @@ helpui/
       _error.html          # HTMX 错误替换用的自包含片段
     static/                # htmx.min.js 与 style.css，内置进生成的应用
   scripts/                 # 一次性的排查探针，作为修复证据保留（已排除出 lint）
+                           #   清单与用法见 scripts/README.md
   tests/
     conftest.py            # 真实 fixture 测试脚手架
     fixtures/sample_{argparse,click,typer}.py

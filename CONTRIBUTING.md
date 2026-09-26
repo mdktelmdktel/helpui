@@ -7,7 +7,7 @@
 需要 **Python 3.11 或更高版本**。
 
 ```console
-git clone https://github.com/OWNER/helpui.git
+git clone https://github.com/mdktelmdktel/helpui.git
 cd helpui
 python -m pip install -e ".[dev]"
 ```
@@ -79,7 +79,8 @@ helpui/
 **探针：报告结论行，而不是日志。** `scripts/` 存放追查特定 bug 时写的一次性验证探针。
 它们打印几行 `check: value` 然后退出——它们是修复的证据，不是交付代码，
 所以该目录被排除在 lint 之外。排查 bug 时，优先写这样一个探针，
-而不是把日志粘贴进对话里。
+而不是把日志粘贴进对话里。目录里保留哪些脚本、各自什么用途，见
+[`scripts/README.md`](scripts/README.md)。
 
 ## 约定
 

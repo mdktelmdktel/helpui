@@ -2,6 +2,9 @@ name: CI
 
 on:
   push:
+    # The repository's default branch is `main`. `master` is kept as a fallback
+    # so a lingering local checkout (the branch is renamed `master` -> `main` at
+    # release time) does not silently stop running CI.
     branches: [main, master]
   pull_request:
   workflow_dispatch:
@@ -23,8 +26,15 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
 
+    # Windows needs an explicit UTF-8 stdio encoding: the runner's default
+    # console code page is GBK, and this repo's fixtures and generated templates
+    # contain non-ASCII text that raises UnicodeEncodeError when printed.
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5

@@ -32,12 +32,20 @@ dependencies = [
     "python-multipart>=0.0.9",
 ]
 
+authors = [
+    { name = "mdktelmdktel", email = "mdktelmdktel@users.noreply.github.com" },
+    { name = "ds老师", email = "ds-laoshi@users.noreply.github.com" },
+]
+
 [project.urls]
-Homepage = "https://github.com/OWNER/helpui"
-Repository = "https://github.com/OWNER/helpui"
-Issues = "https://github.com/OWNER/helpui/issues"
-Changelog = "https://github.com/OWNER/helpui/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/OWNER/helpui/blob/main/SPEC.md"
+# NOTE: the default branch of this repository is `main`. These deep links must
+# use it or they 404 on the published repository. (The local working branch is
+# renamed to `main` at release time; CI also accepts `master`.)
+Homepage = "https://github.com/mdktelmdktel/helpui"
+Repository = "https://github.com/mdktelmdktel/helpui"
+Issues = "https://github.com/mdktelmdktel/helpui/issues"
+Changelog = "https://github.com/mdktelmdktel/helpui/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/mdktelmdktel/helpui/blob/main/SPEC.md"
 
 [project.optional-dependencies]
 dev = [
@@ -70,8 +78,16 @@ target-version = "py311"
 
 # `scripts/` holds one-off verification probes written while chasing a specific
 # bug: they read a generated project, print conclusion lines, and exit. They are
-# evidence for a fix (see SPEC.md), not shipped code, so they are excluded from
-# the product lint gate. `helpui/` and `tests/` are linted strictly.
+# evidence for a fix (see SPEC.md and scripts/README.md), not shipped code, so
+# they are excluded from the product lint gate. `helpui/` and `tests/` are
+# linted strictly.
+#
+# This exclusion is still load-bearing, not a leftover: with `scripts/` linted
+# the tree reports 16 findings across 9 of its scripts (E402, F401, I001,
+# RUF100, RUF059) -- imports deliberately placed after `sys.path` tweaks, and
+# `noqa` directives written for a wider rule set. Rewriting them to satisfy the
+# product gate would mean editing historical evidence to fit a style rule it was
+# never written for.
 extend-exclude = ["scripts"]
 
 [tool.ruff.lint]

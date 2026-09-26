@@ -129,7 +129,7 @@ def main() -> int:
 
     tmp = Path(tempfile.mkdtemp(prefix="helpui_t4_"))
     project = tmp / "project"
-    generate_project(scan_tool(str(REPO / "scripts" / "_slow_tool.py")).spec, project)
+    generate_project(scan_tool(str(REPO / "scripts" / "slow_tool.py")).spec, project)
 
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "HELPUI_TIMEOUT": "120"}
     completed = subprocess.run(

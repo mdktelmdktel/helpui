@@ -54,7 +54,7 @@ def main() -> int:
 
     tmp = Path(tempfile.mkdtemp(prefix="helpui_t4_baseline_"))
     project = tmp / "project"
-    gen.generate_project(scan_tool(str(REPO / "scripts" / "_slow_tool.py")).spec, project)
+    gen.generate_project(scan_tool(str(REPO / "scripts" / "slow_tool.py")).spec, project)
 
     probe_code = PROBE.split('PROBE = r\'\'\'', 1)[1].split("'''", 1)[0]
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "HELPUI_TIMEOUT": "120"}

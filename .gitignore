@@ -25,6 +25,17 @@ htmlcov/
 /generated/
 /out/
 
+# Artifacts left behind by the CI smoke step (`helpui scan --json`,
+# `helpui test`) and by the verification scripts in scripts/.
+/spec.json
+/selftest.json
+.ci_local.log
+.acceptance.log
+
+# Runtime database written into a generated project by its first run.
+data/history.db
+*.sqlite3
+
 # Editors / OS
 .idea/
 .vscode/

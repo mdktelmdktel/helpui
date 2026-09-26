@@ -3,7 +3,7 @@
 
 This script is the harness for `task-4`. It:
 
-1. scans ``scripts/_slow_tool.py`` (plus the repo fixtures) and generates a
+1. scans ``scripts/slow_tool.py`` (plus the repo fixtures) and generates a
    project into a throw-away directory,
 2. boots the generated FastAPI app with ``uvicorn`` in a child process on a
    free port, with the generated project as ``cwd``,
@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
-SLOW_TOOL = REPO / "scripts" / "_slow_tool.py"
+SLOW_TOOL = REPO / "scripts" / "slow_tool.py"
 PYTHON = sys.executable
 
 _BOOT_MARKER = "Uvicorn running on"

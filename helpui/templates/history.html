@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}History · {{ spec.tool_name }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="crumbs"><a href="/">Commands</a> <span>/</span> History</p>
+  <h1>History</h1>
+  <p class="lede muted">{{ total }} run{{ '' if total == 1 else 's' }} recorded.</p>
+</section>
+
+<section class="panel">
+  {% if runs %}
+  <table class="runs">
+    <thead>
+      <tr>
+        <th>#</th><th>Command</th><th>Started</th><th>Duration</th>
+        <th>Exit</th><th>Status</th><th>Result</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td class="mono">{{ run.id }}</td>
+        <td class="mono">{{ run.command }}</td>
+        <td class="mono">{{ run.started_at }}</td>
+        <td class="mono">{{ run.duration }}</td>
+        <td class="mono">{{ run.exit_code if run.exit_code is not none else '—' }}</td>
+        <td><span class="status status-{{ run.status }}">{{ run.status }}</span></td>
+        <td class="actions-cell">
+          <a class="btn small" href="/history/{{ run.id }}">View</a>
+          <a class="btn small" href="/history/{{ run.id }}/download">Download</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Nothing has been run yet. <a href="/">Pick a command</a> to get started.</p>
+  {% endif %}
+</section>
+{% endblock %}

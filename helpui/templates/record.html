@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ record.id }} · {{ spec.tool_name }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="crumbs"><a href="/">Commands</a> <span>/</span> <a href="/history">History</a> <span>/</span> #{{ record.id }}</p>
+  <h1>{{ record.command }}</h1>
+  <p class="lede mono">{{ record.started_at }}</p>
+</section>
+
+<section class="panel">
+  <h2>Parameters</h2>
+  {% if record.params %}
+  <table class="kv">
+    <tbody>
+      {% for key, value in record.params.items() %}
+      <tr><th>{{ key }}</th><td class="mono">{{ value }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No parameters were supplied.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Output</h2>
+  {{ rendered }}
+</section>
+{% endblock %}

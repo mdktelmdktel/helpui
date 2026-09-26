@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% import "_widget.html" as w %}
+{% block title %}{{ command.label }} · {{ spec.tool_name }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="crumbs"><a href="/">Commands</a> <span>/</span> {{ command.label }}</p>
+  <h1>{{ command.label }}</h1>
+  {% if command.help %}<p class="lede">{{ command.help }}</p>{% endif %}
+</section>
+
+<form class="run-form"
+      id="run-form"
+      method="post"
+      action="/run/{{ command.slug }}"
+      enctype="multipart/form-data"
+      hx-post="/run/{{ command.slug }}"
+      hx-target="#result"
+      hx-swap="innerHTML"
+      hx-encoding="multipart/form-data"
+      hx-indicator="#spinner">
+
+  {% if command.positionals %}
+  <fieldset class="group">
+    <legend>Arguments</legend>
+    {% for option in command.positionals %}
+      {{ w.widget(option) }}
+    {% endfor %}
+  </fieldset>
+  {% endif %}
+
+  {% if command.options %}
+  <fieldset class="group">
+    <legend>Options</legend>
+    {% for option in command.options %}
+      {{ w.widget(option) }}
+    {% endfor %}
+  </fieldset>
+  {% else %}
+    {% if not command.positionals %}
+    <p class="muted">This command takes no arguments.</p>
+    {% endif %}
+  {% endif %}
+
+  <div class="actions">
+    <button type="submit" class="btn primary">Run</button>
+    <button type="button" class="btn" id="cancel-btn"
+            hx-post="/cancel/{{ command.slug }}" hx-target="#result" hx-swap="innerHTML">Cancel</button>
+    <span id="spinner" class="spinner htmx-indicator">running…</span>
+  </div>
+</form>
+
+<section id="result" class="panel result-panel">
+  <p class="muted">Submit the form to run <code>{{ spec.tool_name }} {{ command.label }}</code>.</p>
+</section>
+{% endblock %}

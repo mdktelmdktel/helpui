@@ -29,19 +29,19 @@ mytool  [argparse]  (D:\work\mytool.py)
 
 ## Status
 
-**Phase 1 of 5 is complete**: the parser layer and the `scan` command.
+**All five phases are implemented.** The CLI, the parser layer, the generator and
+the runtime are all in place.
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Model, parsers (argparse/click/typer), detector, `scan` CLI | ✅ Complete — 146 tests |
-| 2 | Generator, golden tests | ⏳ Planned |
-| 3 | Runtime: FastAPI app, forms, live logs, result rendering | ⏳ Planned |
-| 4 | History, downloads, cancel, timeout, security layer | ⏳ Planned |
-| 5 | `helpui test`, end-to-end suite, docs | ⏳ Planned |
+| 1 | Model, parsers (argparse/click/typer), detector, `scan` CLI | ✅ Complete |
+| 2 | Generator, golden tests | ✅ Complete |
+| 3 | Runtime: FastAPI app, forms, live logs, result rendering | ✅ Complete |
+| 4 | History, downloads, cancel, timeout, security layer | ✅ Complete |
+| 5 | `helpui test`, end-to-end suite, docs | ✅ Complete |
 
-`helpui generate`, `helpui serve` and `helpui test` are already declared in
-`--help` but exit with `error: ... is not implemented yet (planned for phase N)`
-until their phases land. This keeps the CLI contract stable from the start.
+The four commands are all live: `scan`, `generate`, `serve` and `test`. Nothing
+in `--help` is a stub any more.
 
 ---
 
@@ -78,8 +78,10 @@ helpui scan ./script.py --json          # a .py file runs via the current interp
 helpui scan "python -m mypackage"       # a full command line is accepted too
 ```
 
-`--json` prints exactly one JSON document on stdout — safe to pipe. Warnings and
-errors always go to **stderr**. Excerpt of a real response, trimmed for length:
+`--json` prints exactly one JSON document on stdout — safe to pipe. Use
+`--indent 0` for compact output. Excerpt of a real
+`helpui scan tests/fixtures/sample_click.py --json` response, trimmed for
+length (`--indent 1` to keep it readable here; the default is `2`):
 
 ```json
 {
@@ -87,9 +89,16 @@ errors always go to **stderr**. Excerpt of a real response, trimmed for length:
   "schema_version": 1,
   "spec": {
     "tool_name": "sample_click",
-    "tool_path": "/abs/path/sample_click.py",
-    "description": "Convert an input file to another format.",
+    "tool_path": "D:\\path\\tests\\fixtures\\sample_click.py",
+    "description": "Sample click tool used by HelpUI tests.",
     "commands": [
+      {
+        "name": "",
+        "help": "Sample click tool used by HelpUI tests.",
+        "options": [],
+        "positionals": [],
+        "subcommands": []
+      },
       {
         "name": "convert",
         "help": "Convert an input file to another format.",
@@ -123,34 +132,81 @@ errors always go to **stderr**. Excerpt of a real response, trimmed for length:
 }
 ```
 
-When a scan fails, the same envelope carries a stable error code and exits `1`:
+Three details worth knowing before you consume this JSON:
+
+* `ok` is the **string** `"true"`/`"false"`, not a JSON boolean — see
+  [SPEC.md](SPEC.md) §6.2. Test with `payload["ok"] == "false"`.
+* The **root command's `name` is the empty string**, not `"(root)"`; `"(root)"`
+  is only a display label the human-readable output adds. Root `help` repeats
+  the tool description.
+* With `--subcommand NAME`, `spec.description` is **that subcommand's help**, not
+  the parent tool's description (verified: `--subcommand convert` gives
+  `"Convert an input file to another format."`).
+
+When a scan fails, the same envelope carries a stable error code and exits `1`
+(real output of `helpui scan <tool-that-is-not-a-CLI> --json`):
 
 ```json
 {
   "ok": "false",
   "schema_version": 1,
   "code": "unknown_framework",
-  "error": "could not identify the CLI framework from the help output",
-  "hint": "Supported frameworks: argparse, click, typer."
+  "error": "captured help output but no `usage:` line was found",
+  "hint": "Supported frameworks: argparse, click, typer. See SPEC.md for the coverage matrix."
 }
 ```
+
+Note that a page with a lower-case `usage:` line but no section headers is **not**
+an error: it resolves to `argparse` at `confidence: "low"` (SPEC §4.1). Only
+output with no recognisable `usage:` line at all becomes `unknown_framework`.
 
 Stable codes: `tool_not_found`, `no_help_output`, `unknown_framework`,
 `subcommand_not_found`, `parse_failed`, `internal_error`.
 
-### `helpui generate <tool> --out <dir> [--port 8000]`
+### `helpui generate <tool> --out <dir> [--port 8000] [--host 127.0.0.1] [--force]`
 
-*(Phase 2)* Scans the tool and writes a self-contained web project.
+Scans the tool and writes a self-contained web project into `--out`: an `app.py`
+entry point, the `helpui_app/` package (10 modules), `spec.json`, the templates
+and static assets it needs, a `data/` directory (with `.gitkeep`) and a
+project-local `README.md`. `--force` overwrites an existing directory.
 
-### `helpui serve <dir> [--port 8000] [--host 127.0.0.1]`
+The generated project is plain source code — the generator does **not** write a
+database. `history.db` is created at runtime by the app on first use, so a
+generated project is fully described by its committed files and reproduces
+byte-for-byte across platforms (all generated text is written with LF endings).
 
-*(Phase 3)* Starts the generated project.
+### `helpui serve <dir> [--port 8000] [--host 127.0.0.1] [--reload]`
 
-### `helpui test <dir>`
+Starts the generated project.
 
-*(Phase 5)* Smoke-tests a generated project: starts it, `GET /`, submits one
-dummy job, asserts `200`. Prints
-`{"ok": ..., "project_dir": ..., "checks": [{"name": ..., "ok": ..., "detail": ...}]}`.
+### `helpui test <dir> [--timeout 60]`
+
+Smoke-tests a generated project end to end: boots the app, then walks the real
+surfaces — `GET /`, `/history`, `/api/spec`, the static assets, every command's
+form page, a real form submission, the recorded history row and the run API
+round-trip. It prints one JSON document on stdout and exits `0` only when every
+check passed:
+
+```json
+{
+  "ok": "true",
+  "project_dir": "/abs/path/to/project",
+  "checks": [{"name": "index_responds", "ok": true, "detail": "GET / -> 200"}]
+}
+```
+
+There are **13 checks**:
+
+```
+project_exists      spec_loads          app_imports        app_boots_factory
+app_boots           index_responds      history_responds   api_spec_responds
+static_assets       form_renders        submit_job         history_recorded
+api_run_roundtrip
+```
+
+As with `scan`, `ok` is the **string** `"true"`/`"false"` (SPEC §6.2), and a
+failed project exits `1` with the same envelope. Note that `test` takes no
+`--json` flag — unlike `scan`, JSON *is* its only output format.
 
 ---
 
@@ -161,26 +217,36 @@ supported:
 
 | Framework | Recognised by | Notes |
 |---|---|---|
-| **argparse** | lower-case `usage:` plus `positional arguments:` / `options:` | Handles wrapped usage lines, epilogs, nested subparsers and `{a,b}` choice metavars |
-| **click** | capitalised `Usage:` plus `Options:` / `Commands:` | Handles `[required]`, `[default: x]`, `[env var: X]`, `[a\|b\|c]` choices, `multiple=True` |
-| **typer** | rich table panels (box-drawing **or** ASCII) | Reuses the click parser; also recovers nested sub-apps such as `admin reset` |
+| **typer** | rich table panels (box-drawing **or** ASCII) | Checked first, before argparse/click |
+| **argparse** | lower-case `usage:` plus lower-case `positional arguments:` / `optional arguments:` / `options:`, and **no** capitalised click header | Handles wrapped usage lines, epilogs, nested subparsers and `{a,b}` choice metavars |
+| **click** | capitalised `Usage:` plus at least one of `Options:` / `Commands:` / `Arguments:` | Handles `[required]`, `[default: x]`, `[env var: X]`, `[a\|b\|c]` choices, `multiple=True` |
 
-Anything else — man-page style help, docopt, fire, a hand-rolled parser — is
-reported as `unknown_framework` with exit code 1. HelpUI deliberately does not
-attempt a generic help parse (see [SPEC.md](SPEC.md) §4.5).
+Detection runs in that order. Typer is tested first because rich panels would
+otherwise be mis-parsed; the argparse test explicitly requires the *absence* of
+click's capitalised headers, so a page carrying both is not mistaken for
+argparse. A bare usage line with no section headers at all still resolves to
+`argparse` or `click` at `confidence: low` rather than failing. Anything else —
+man-page style help, docopt, fire, a hand-rolled parser — is reported as
+`unknown_framework` with exit code 1. HelpUI deliberately does not attempt a
+generic help parse (see [SPEC.md](SPEC.md) §4.5).
 
-Option types map onto form widgets:
+Option types map onto form widgets (`CLIOption.type`, checked at construction
+time against a closed vocabulary — anything unrecognised degrades to `str`):
 
 | Detected type | Widget |
 |---|---|
-| `str` | text input |
+| `str` | text input (also the fallback for unrecognised types) |
 | `int`, `float` | number input |
 | `bool` | checkbox |
 | `choice` | select |
 | `file` | file upload |
 | `dir` | text input with a path hint |
 | `password` | password input |
-| `multiple` | multi-value input |
+
+`multiple` is a **separate boolean field** on `CLIOption`, not one of the eight
+types — an option can be `type: "str"` *and* `multiple: true`, which renders as a
+repeatable multi-value input. `value_name` (the metavar) drives the input
+placeholder, and `aliases` lists every spelling (`["-o", "--output"]`).
 
 ---
 
@@ -195,7 +261,9 @@ These are deliberate, documented trade-offs. Full reasoning is in
    detection. (SPEC §4.6.1)
 2. **`--token` is not treated as a password.** Only the words *password* /
    *passphrase* (or `PASSWORD`/`SECRET` metavars) select the password widget;
-   guessing wrong would hide data the user needs to verify. (SPEC §4.6.2)
+   guessing wrong would hide data the user needs to verify. A credential named
+   `--token` is therefore a plain text input, while `--password` **is** a
+   password input in all three fixtures. (SPEC §4.6.2)
 3. **Typer without `rich` is labelled `click`.** Its output is byte-identical to
    click's; the parse is still correct, only the `parser_kind` label differs.
    (SPEC §4.2)
@@ -208,6 +276,15 @@ These are deliberate, documented trade-offs. Full reasoning is in
    `COLUMNS=100`; a tool that ignores these may emit ANSI escapes. (SPEC §4.6.5)
 7. **Option help text is shown verbatim**, including click's `[default: x]`
    annotation. (SPEC §4.6.4)
+8. **argparse required options are reported as optional.** argparse signals
+   "required" through the *usage line* (`--token TOKEN` unbracketed), not in the
+   option's help cell, and `argparse_parser` only looks for the literal word
+   "required" in that cell — so `required` is always `False` for argparse
+   options. Click appends a `[required]` annotation to the help cell and is
+   parsed correctly; typer's rich option rows carry no such annotation, so typer
+   options are `False` too (only typer's `*`-marked *arguments* are detected as
+   required). This is a **fixable parser defect, not a framework difference**; it
+   is recorded rather than worked around. (SPEC §4.6.7)
 
 ---
 
@@ -216,21 +293,35 @@ These are deliberate, documented trade-offs. Full reasoning is in
 ```console
 pip install -e ".[dev]"
 
-pytest -q              # 146 tests
+pytest -q              # the whole suite
 ruff check .           # lint
 mypy helpui            # types (strict)
 ```
 
+These three are the CI checks; the suite is a few hundred tests, so no fixed
+number is quoted here — run `pytest --collect-only -q` for the current figure.
+
 ### How the tests work
 
-Parser tests run the **real** fixture scripts in `tests/fixtures/` through the
-scanner rather than asserting against hand-written help strings. Hand-written
-strings drift from what argparse/click/typer actually emit; driving the real
-fixtures caught six genuine parsing bugs in Phase 1, including wrapped usage
-lines, argparse epilogs, and typer's panel layout.
+Three layers, each driving real artifacts rather than hand-written expectations:
 
-Fixtures are runnable tools, so the same scripts will serve the executor tests
-(Phase 3) and the end-to-end test (Phase 5):
+* **Unit / parser tests** (`test_model`, `test_scanner`, `test_detector`,
+  `test_parsers_*`, `test_scan_cli`) run the **real** fixture scripts in
+  `tests/fixtures/` through the scanner. Hand-written help strings drift from
+  what argparse/click/typer actually emit; driving the real fixtures caught five
+  genuine parsing bugs in Phase 1, including wrapped usage lines, argparse
+  epilogs, and typer's panel layout.
+* **`test_generator.py`** compares the generator's output against golden files
+  and asserts generated projects load and run.
+* **`test_e2e.py`** boots a generated project for each fixture via
+  `helpui.selftest` (the same code path as `helpui test`), submits a real job and
+  walks the resulting pages and API. This is what catches template-level defects:
+  a page that only breaks once a run with parameters exists (as
+  `templates/record.html` once did) still returns `200` from a plain `GET /`
+  smoke test.
+
+Fixtures are runnable tools, not just help text, which is why the same scripts
+serve the parser, executor and end-to-end tests:
 
 ```console
 python tests/fixtures/sample_argparse.py convert --help
@@ -238,9 +329,9 @@ python tests/fixtures/sample_click.py convert --help
 python tests/fixtures/sample_typer.py convert --help
 ```
 
-Fixture subprocesses always run with `COLUMNS=100`, `TERM=dumb` and
-`NO_COLOR=1`, so help text does not reflow differently on an 80-column CI runner
-and a 120-column developer terminal.
+Fixture subprocesses always run with `COLUMNS=100`, `LINES=50`, `TERM=dumb`,
+`NO_COLOR=1` and `PYTHONIOENCODING=utf-8`, so help text does not reflow
+differently on an 80-column CI runner and a 120-column developer terminal.
 
 ### Project layout
 
@@ -253,21 +344,40 @@ helpui/
     model.py               # CLIOption / CLICommand / CLISpec
     scanner.py             # runs <tool> --help (shell=False, argv list)
     scanner_service.py     # scan_tool(): detect + parse + expand subcommands
-    generator.py           # phase 2
-    selftest.py            # phase 5
+    generator.py           # writes the generated project (helpui_app/ + assets)
+    selftest.py            # run_project_tests(): backs `helpui test`
     parsers/
       base.py              # parser interface + text utilities
       argparse_parser.py
       click_parser.py
       typer_parser.py      # rich-panel normalisation + click reuse
       detector.py          # framework detection
-    runtime/               # phase 3-4
+    runtime/
+      server.py            # serve_project(): the `helpui serve` entry point
+    templates/             # 8 Jinja2 templates copied into generated projects
+      _error.html          # self-contained fragment for HTMX error swaps
+    static/                # htmx.min.js + style.css bundled into generated apps
+  scripts/                 # one-off probes kept as fix evidence (lint-excluded)
   tests/
     conftest.py            # real-fixture harness
     fixtures/sample_{argparse,click,typer}.py
     test_model.py          test_scanner.py       test_detector.py
     test_parsers_argparse.py  test_parsers_click.py  test_parsers_typer.py
-    test_scan_cli.py
+    test_scan_cli.py       test_generator.py     test_e2e.py
+```
+
+A **generated project** (what `helpui generate` writes, 24 files) looks like:
+
+```
+<out>/
+  app.py                   # entry point: `python app.py`
+  spec.json                # the scanned CLISpec
+  README.md                # how to run this project
+  helpui_app/              # 10 modules: app, config, executor, history,
+                           #   paths, rendering, security, server, spec, __init__
+  templates/               # 8 templates (incl. _error.html)
+  static/                  # htmx.min.js, style.css
+  data/                    # .gitkeep; history.db appears here at runtime
 ```
 
 ---

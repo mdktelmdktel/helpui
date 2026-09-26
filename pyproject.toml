@@ -45,6 +45,12 @@ filterwarnings = ["error::DeprecationWarning:helpui.*"]
 line-length = 100
 target-version = "py311"
 
+# `scripts/` holds one-off verification probes written while chasing a specific
+# bug: they read a generated project, print conclusion lines, and exit. They are
+# evidence for a fix (see SPEC.md), not shipped code, so they are excluded from
+# the product lint gate. `helpui/` and `tests/` are linted strictly.
+extend-exclude = ["scripts"]
+
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RUF"]
 ignore = ["E501"]

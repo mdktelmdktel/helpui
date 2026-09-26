@@ -1,0 +1,58 @@
+{#-
+  Result rendering.
+
+  `rendered` is produced by `helpui.runtime.render`, which sniffs the output:
+    json  -> table (list of objects) or pretty <pre>
+    csv   -> table
+    text  -> <pre>
+    html  -> a short message, never raw injection (see SPEC.md)
+-#}
+<div class="result"
+     id="run-{{ record.id }}"
+     {% if record.status == 'running' %}
+     hx-get="/result/{{ record.id }}"
+     hx-trigger="every 1s"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+  <header class="result-head">
+    <span class="status status-{{ record.status }}">{{ record.status }}</span>
+    <span class="mono">#{{ record.id }}</span>
+    <span class="mono">{{ record.command }}</span>
+    {% if record.exit_code is not none %}<span class="mono">exit {{ record.exit_code }}</span>{% endif %}
+    {% if record.duration_ms is not none %}<span class="mono">{{ '%.2f'|format(record.duration_ms / 1000) }}s</span>{% endif %}
+  </header>
+
+  <p class="cmdline mono" title="the exact argv that was executed">{{ record.argv_display }}</p>
+
+  <div class="tabs">
+    <button type="button" class="tab active" data-tab="stdout">stdout</button>
+    <button type="button" class="tab" data-tab="stderr">stderr{% if record.stderr %} ({{ record.stderr_lines }}){% endif %}</button>
+    <button type="button" class="tab" data-tab="rendered">result</button>
+  </div>
+
+  <section class="tab-panel active" data-panel="stdout">
+    {% if record.stdout %}
+      <pre class="log">{{ record.stdout }}</pre>
+    {% else %}
+      <p class="muted">No stdout output.</p>
+    {% endif %}
+  </section>
+
+  <section class="tab-panel" data-panel="stderr">
+    {% if record.stderr %}
+      <pre class="log log-err">{{ record.stderr }}</pre>
+    {% else %}
+      <p class="muted">No stderr output.</p>
+    {% endif %}
+  </section>
+
+  <section class="tab-panel" data-panel="rendered">
+    {{ rendered }}
+  </section>
+
+  <div class="actions">
+    <a class="btn small" href="/history/{{ record.id }}">Open full record</a>
+    <a class="btn small" href="/history/{{ record.id }}/download">Download</a>
+  </div>
+</div>

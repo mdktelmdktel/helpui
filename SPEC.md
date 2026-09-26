@@ -6,7 +6,6 @@ authoritative place to check "why does it behave like this?".
 
 Status legend: **[D] Decided** (implemented and tested), **[L] Limitation**
 (accepted, documented, not fixed), **[O] Open** (deferred to a later phase).
-
 ---
 
 ## 1. Scope
@@ -199,8 +198,19 @@ parsing". A `NAME`/`SYNOPSIS` style page yields `unknown_framework`.
    the words *password* / *passphrase* (in prose) or metavars
    `PASSWORD`/`SECRET`/`PASSPHRASE` select the password widget. A credential
    named `--token` renders as a plain text input, because guessing wrong *hides*
-   data the user needs to verify. `--password` in the fixtures does render as a
-   password input.
+   data the user needs to verify.
+
+   **Fixed in Phase 2.** The rule above was correct but was *not* what the code
+   did for click/typer: the metavar table (`_METAVAR_TYPES`, mapping `TEXT` →
+   `str`) and `_type_from_angle()` (which returns `"str"` for typer's `<str>`
+   column) are both consulted *before* the prose sniff, and both return a truthy
+   value, so the `or` chain short-circuited **in two places** and `infer_type`
+   was never reached. Click and typer spell a `str` option's metavar `TEXT`/`<str>`,
+   so their `--password` options were reported as `str` and rendered as **plain
+   text** — a password shown in clear. The fix lets the prose sniff win for the
+   password vocabulary. Verified after the fix: `--password` is `password` for
+   all three fixtures (`sample_argparse.py`, `sample_click.py`,
+   `sample_typer.py`), while `--token` remains `str`. **[D]**
 3. **`--config` vs `--config-file`.** A metavar of `PATH` is ambiguous; the
    prose decides (`directory|folder` → `dir`, otherwise `file`).
 4. **Option descriptions are not reformatted.** `help` keeps the raw prose,
@@ -213,6 +223,27 @@ parsing". A `NAME`/`SYNOPSIS` style page yields `unknown_framework`.
    `--subcommand`-style strings follows the platform rules; pass a real file
    path (which is handled directly, without splitting) when the path contains
    spaces.
+7. **argparse's required options are reported as optional.** This is a
+   **fixable parser defect, not a framework difference.** argparse signals
+   "required" structurally, through the *usage line*: a required option appears
+   unbracketed (`--token TOKEN`) while an optional one is bracketed
+   (`[--tag TAG]`). It never writes the string "required" into the option's own
+   help cell. `argparse_parser` computes
+   `required=bool(re.search(r"\brequired\b(?!:)", help_text))` against **that
+   help cell only**, so the match always fails and every argparse option comes
+   back `required=False`. Click and typer instead append a literal `[required]`
+   annotation, which `click_parser.infer_required` does parse.
+   Measured on the fixtures' `--token` (declared required in all three):
+
+   | Framework | "required" occurrences in help | `--token required` |
+   |---|---|---|
+   | argparse | **0** | `False` ← defect |
+   | click | 1 | `True` |
+   | typer | 1 | `False` (option row carries no `[required]`) |
+
+   Fixing it means reading usage-line brackets (for argparse) rather than
+   grepping the help cell. Recorded here so the behaviour is deliberate rather
+   than accidental. **[L]**
 
 ### [D] 4.7 Parsers never raise on malformed input
 
@@ -312,13 +343,53 @@ recorded here so the change is deliberate.
 
 `0` success, `1` operation failed, `2` bad CLI usage (argparse's default).
 
-### [D] 6.5 Phase-1 stubs for later subcommands
+### [D] 6.5 Stubs for later subcommands (historical, Phase 1)
 
-`generate`, `serve` and `test` exist in `--help` from Phase 1 so the contract is
-fixed early. Their modules are declared with correct type signatures but raise
-`NotImplementedError`; the CLI catches the resulting `ImportError` path and
-reports `error: ... is not implemented yet (planned for phase N)` with exit 1.
-This keeps `mypy` honest and the CLI stable while later phases fill them in.
+`generate`, `serve` and `test` were declared in `--help` from Phase 1 so the CLI
+contract was fixed up front. As shipped in Phase 1 (commit `7870d9e`) their
+modules carried correct type signatures but raised `NotImplementedError`; the CLI
+caught the resulting `ImportError` path and reported
+`error: ... is not implemented yet (planned for phase N)` with exit 1.
+
+**All four commands are now implemented** — `scan`, `generate`, `serve` and
+`test`. The stub path is no longer reachable for any subcommand, and `--help`
+contains nothing labelled "not implemented yet". The stub mechanism is retained
+only as history: it is what let Phase 1 publish a stable CLI contract without
+shipping fake behaviour.
+
+### [D] 6.6 `helpui test` output contract
+
+`helpui test <dir>` takes **no `--json` flag** — unlike `scan`, JSON is its only
+output format, so a `--json` argument is a usage error (exit `2`). It prints one
+envelope on stdout and exits `0` only when every check passed:
+
+```json
+{
+  "ok": "true",
+  "project_dir": "/abs/path/to/project",
+  "checks": [{"name": "...", "ok": true, "detail": "..."}]
+}
+```
+
+`ok` follows the same string convention as `scan` (§6.2). There are **13**
+checks, ordered cheapest-first so an early failure short-circuits the expensive
+ones:
+
+| Check | Asserts |
+|---|---|
+| `project_exists` | the directory holds `app.py` and `spec.json` |
+| `spec_loads` | `spec.json` round-trips to a `CLISpec` |
+| `app_imports` | `helpui_app.app` imports in a subprocess |
+| `app_boots_factory` | `create_app()` returns an application |
+| `app_boots` | the app starts (`TestClient`) |
+| `index_responds` | `GET /` → 200 |
+| `history_responds` | `GET /history` → 200 |
+| `api_spec_responds` | `GET /api/spec` → 200 |
+| `static_assets` | `GET /static/style.css` → 200 |
+| `form_renders` | every command's form page → 200 |
+| `submit_job` | a real submission runs and records a row |
+| `history_recorded` | the run is visible in history |
+| `api_run_roundtrip` | the run is readable over the API |
 
 ---
 
@@ -328,7 +399,7 @@ This keeps `mypy` honest and the CLI stable while later phases fill them in.
 
 Every parser test runs the actual `tests/fixtures/sample_*.py` through the
 scanner (`tests/conftest.help_text`). Hand-written help strings drift from what
-the libraries really emit — this approach caught six real bugs in Phase 1,
+the libraries really emit — this approach caught five real bugs in Phase 1,
 including:
 
 * a wrapped argparse `usage:` line being parsed as the description;
@@ -348,7 +419,20 @@ width and the parse (and the Phase 2 golden files) would differ between an
 ### [D] 7.3 Fixtures are runnable tools, not just help text
 
 The fixtures accept real arguments and do real (harmless) work, so the same
-scripts serve the Phase 3 executor tests and the Phase 5 end-to-end test.
+scripts serve the parser tests (§7.1), the generator golden tests, and the
+end-to-end test in `tests/test_e2e.py`.
+
+### [D] 7.4 The end-to-end test runs whole projects
+
+`test_e2e.py` generates a real project for each fixture, boots it through the
+same `helpui.selftest` code path that `helpui test` uses (§6.6), submits a job
+and walks the resulting pages and API. A generator or template defect is only
+visible at this level: `templates/record.html` once iterated a dict as
+`{% for key, value in record.params %}` (Jinja2 yields keys, so unpacking raised
+`ValueError: too many values to unpack`), which returned `500` for the run
+**detail** page while `GET /` and `GET /history` stayed healthy. The end-to-end
+test now fetches the detail page *after* a run with parameters exists, so this
+class of defect fails loudly.
 
 ---
 
@@ -364,3 +448,140 @@ These are recorded now because later phases depend on them:
 3. `ScanFailure.code` values (§6.3) are the error vocabulary for `scan`.
 4. `GenerationResult`, `SelfTestResult`/`Check` and `serve_project` are declared
    with final signatures, so phase 2/3/5 implement rather than redesign.
+
+---
+
+## 9. Generator decisions (Phase 2)
+
+### [D] 9.1 The generated project is a package, not loose modules
+
+The generator writes `helpui_app/` (10 modules) plus a thin root `app.py`,
+rather than a handful of sibling `.py` files. Two reasons:
+
+1. Both entry points work without a `sys.path` hack: `python app.py` and
+   `pytest` can each import `helpui_app.*` by name, because the package sits
+   next to the entry point.
+2. A single generic package name keeps generated modules from colliding with the
+   *wrapped tool's* own modules. The tool being wrapped is arbitrary; a generic
+   name like `app.py` or `executor.py` at top level is exactly the name a user's
+   own project is likely to use, and a name clash would silently shadow one of
+   them.
+
+### [D] 9.2 `history.db` is created at runtime, never by the generator
+
+`generate_project()` writes only source files (`app.py`, `spec.json`,
+`helpui_app/`, `templates/`, `static/`, `README.md`) plus `data/` with a
+`.gitkeep` placeholder. It does **not** create the SQLite file. Keeping the
+generated tree equal to "the set of files a human would commit" means:
+
+* the output is deterministic and diffable — a golden comparison would otherwise
+  have to cope with a binary artifact whose bytes depend on when it was created;
+* `--force` regeneration has no stale database to reason about;
+* the app creates the file lazily on first use, so a project that is generated
+  but never run leaves no database behind.
+
+### [D] 9.3 Generated text is always written with LF endings
+
+All generated text goes through `_write_text_lf()`, which writes bytes with
+`\n` fixed, instead of `Path.write_text()`. On Windows, `write_text` translates
+`\n` to `os.linesep` (`\r\n`), so the *same* generator input would produce
+different bytes on Windows and Linux. That breaks two things at once: golden-file
+comparison (which stores one canonical form) and any content hash. Forcing LF
+makes the output platform-independent, and the generated project is still valid
+Python on Windows because Python accepts LF in source files.
+
+### [D] 9.4 The argv must include the subcommand path
+
+`Command.argv_path()` returns the subcommand name(s) — e.g. `["convert"]` or
+`["admin", "reset"]` — and `build_argv(tool, command_path, values)` splices them
+in *before* the options:
+
+```
+argv = [*tool, *command_path, ...options and positionals...]
+```
+
+Without the subcommand name, click and argparse subparsers reject **every**
+option with "no such option", because the options are declared on the
+subcommand, not on the root parser. The generated project therefore treats the
+command path as a required part of the invocation, not as metadata.
+
+### [D] 9.5 `build_argv` is a three-part signature, and never joins strings
+
+```python
+def build_argv(
+    tool: list[str],          # argv prefix: [python, /path/to/tool.py] or ["mytool"]
+    command_path: list[str],  # subcommand name(s); [] when the tool has none
+    values: list[tuple[str | None, tuple[str, ...]]],  # (flag, values); flag=None => positional
+) -> list[str]: ...
+```
+
+Splitting `tool` from `command_path` mirrors §9.4: they are conceptually
+different things (what to run vs. which subcommand to run) and the subcommand is
+supplied by the command definition rather than by the form. `values` pairs a
+flag with its values so an option can contribute several argv entries (a
+`multiple=True` option, or one flag per value), and `flag=None` marks a
+positional.
+
+Every entry is appended individually — there is no string joining anywhere in
+the function. That is what makes the §5.1 no-shell guarantee hold all the way
+through the generated app: the argv handed to `subprocess` is a list of literal
+arguments, so no user-supplied value can be reinterpreted as shell syntax.
+
+### [D] 9.6 `type='file'` fields are multipart-only
+
+A field whose `CLIOption.type` is `file` — whether it is an option or a
+positional — takes its value **only** from a multipart file upload. A plain text
+value for that field is not recognised and counts as **not provided**; if the
+field is required, submission fails with `<dest> is required`.
+
+A form field that should accept a typed path must therefore be declared `str`
+(a text input), not `file`. This is a deliberate consequence of `file` meaning
+"the user picks a file in the browser and its contents/path are uploaded",
+rather than "the user types a path".
+
+### [D] 9.7 Blocking execution must go through the threadpool
+
+`run_command` calls the blocking `execute()` through
+`run_in_threadpool`, and must keep doing so. FastAPI dispatches `async def`
+routes on the event loop thread and does **not** move them to the threadpool;
+calling a blocking `subprocess` wait directly from an `async def` route would
+stall the entire server for the duration of the child process — no other request
+would be served, including the live-log and cancel endpoints that are supposed to
+observe that very run.
+
+### [L] 9.8 `HELPUI_TIMEOUT=0` or negative is undefined
+
+The per-run timeout is read from `HELPUI_TIMEOUT`. A value of `0` or a negative
+value has no defined meaning — it is neither "no timeout" nor "expire
+immediately". Unset (or unparseable) falls back to the documented default.
+Recorded so that the absence of validation is deliberate; a future version should
+either reject these values or define them.
+
+---
+
+## 10. Methodology
+
+### [D] 10.1 Probe *timing* matters more than probe *count*
+
+A concrete Phase-2 lesson, kept because it cost real time.
+
+A cancel/timeout investigation measured the cancellation path with **four
+concurrent probes** and read a suspicious ~4 ms latency. That number seemed to
+rule out "the event loop is blocked", so the hypothesis was discarded. It was
+right. The probes had been started *before* the blocking call began, so they were
+measuring an idle loop, not a stalled one: the correct reading is that a probe
+issued *during* the blocking wait takes as long as the wait.
+
+**The general rule:** for a concurrency or blocking defect, *when* a probe is
+issued relative to the suspected blocking window determines whether it can see
+the defect at all. A probe that finishes quickly is not evidence that the bug is
+absent — it may simply have missed the window. Concurrency probes must be
+anchored to the moment of the suspected stall (issued from inside the window, or
+timed against a known-blocked period), and a "fast" result from an unanchored
+probe should be treated as inconclusive rather than exculpatory.
+
+The same discipline applied throughout this project: every claim in these
+documents was checked against real command output rather than against intent, and
+several confident assertions (including the count of Phase-1 bugs, the shape of
+the `scan` JSON example, and an "argparse prints `[required]`" explanation) were
+wrong until measured. **Probe first, then write.**

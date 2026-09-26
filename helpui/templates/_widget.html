@@ -1,0 +1,130 @@
+{#-
+  Renders one form control for a CLIOption.
+
+  Widget mapping (per SPEC.md):
+    str      -> text input
+    int/float-> number input
+    bool     -> checkbox
+    choice   -> select
+    file     -> file upload
+    dir      -> text input with a path hint
+    password -> password input
+    multiple -> the control's `name` gets [] so several values are submitted
+-#}
+{% macro widget(option) %}
+<div class="field{% if option.is_flag %} field-flag{% endif %}" id="field-{{ option.dest }}">
+  {% if option.is_flag %}
+    <label class="check">
+      <input type="checkbox"
+             name="{{ option.dest }}"
+             value="true"
+             id="input-{{ option.dest }}"
+             {% if option.default == 'true' %}checked{% endif %}>
+      <span class="check-label">
+        {{ option.primary_flag }}
+        {% if option.name != option.primary_flag %}<code class="alt">{{ option.name }}</code>{% endif %}
+      </span>
+    </label>
+    {% if option.help %}<p class="hint">{{ option.help }}</p>{% endif %}
+
+  {% elif option.type == 'choice' %}
+    <label class="label" for="input-{{ option.dest }}">
+      {{ option.primary_flag }}
+      {% if option.required %}<span class="req" title="required">*</span>{% endif %}
+    </label>
+    <select id="input-{{ option.dest }}"
+            name="{{ option.dest }}"
+            {% if option.multiple %}multiple size="4"{% endif %}>
+      {% if not option.required and not option.multiple %}
+        <option value="">{{ option.default if option.default is not none else '—' }}</option>
+      {% endif %}
+      {% for choice in option.choices %}
+        <option value="{{ choice }}"
+          {% if option.default == choice %}selected{% endif %}>{{ choice }}</option>
+      {% endfor %}
+    </select>
+    {% if option.help %}<p class="hint">{{ option.help }}</p>{% endif %}
+
+  {% elif option.type == 'bool' %}
+    <label class="check">
+      <input type="checkbox" name="{{ option.dest }}" value="true" id="input-{{ option.dest }}">
+      <span class="check-label">{{ option.primary_flag }}</span>
+    </label>
+    {% if option.help %}<p class="hint">{{ option.help }}</p>{% endif %}
+
+  {% elif option.type == 'file' %}
+    <label class="label" for="input-{{ option.dest }}">
+      {{ option.primary_flag }}
+      {% if option.required %}<span class="req" title="required">*</span>{% endif %}
+    </label>
+    <input type="file"
+           id="input-{{ option.dest }}"
+           name="{{ option.dest }}"
+           {% if option.multiple %}multiple{% endif %}>
+    {% if option.help %}<p class="hint">{{ option.help }}</p>{% endif %}
+
+  {% elif option.type in ('int', 'float') %}
+    <label class="label" for="input-{{ option.dest }}">
+      {{ option.primary_flag }}
+      {% if option.required %}<span class="req" title="required">*</span>{% endif %}
+    </label>
+    <input type="number"
+           id="input-{{ option.dest }}"
+           name="{{ option.dest }}"
+           {% if option.type == 'float' %}step="any"{% else %}step="1"{% endif %}
+           {% if option.default is not none %}value="{{ option.default }}"{% endif %}
+           {% if option.required %}required{% endif %}>
+    {% if option.help %}<p class="hint">{{ option.help }}</p>{% endif %}
+
+  {% elif option.type == 'password' %}
+    <label class="label" for="input-{{ option.dest }}">
+      {{ option.primary_flag }}
+      {% if option.required %}<span class="req" title="required">*</span>{% endif %}
+    </label>
+    <input type="password"
+           id="input-{{ option.dest }}"
+           name="{{ option.dest }}"
+           autocomplete="new-password"
+           {% if option.required %}required{% endif %}>
+    {% if option.help %}<p class="hint">{{ option.help }}</p>{% endif %}
+
+  {% elif option.type == 'dir' %}
+    <label class="label" for="input-{{ option.dest }}">
+      {{ option.primary_flag }}
+      {% if option.required %}<span class="req" title="required">*</span>{% endif %}
+    </label>
+    <input type="text"
+           id="input-{{ option.dest }}"
+           name="{{ option.dest }}"
+           placeholder="path/to/directory"
+           {% if option.default is not none %}value="{{ option.default }}"{% endif %}
+           {% if option.required %}required{% endif %}>
+    <p class="hint">{% if option.help %}{{ option.help }} · {% endif %}a directory path</p>
+
+  {% else %}
+    <label class="label" for="input-{{ option.dest }}">
+      {{ option.primary_flag }}
+      {% if option.required %}<span class="req" title="required">*</span>{% endif %}
+    </label>
+    {% if option.multiple %}
+      <textarea id="input-{{ option.dest }}"
+                name="{{ option.dest }}"
+                rows="2"
+                placeholder="one value per line"
+                {% if option.required %}required{% endif %}>{% if option.default %}{{ option.default }}{% endif %}</textarea>
+    {% else %}
+      <input type="text"
+             id="input-{{ option.dest }}"
+             name="{{ option.dest }}"
+             {% if option.value_name %}placeholder="{{ option.value_name }}"{% endif %}
+             {% if option.default is not none %}value="{{ option.default }}"{% endif %}
+             {% if option.required %}required{% endif %}>
+    {% endif %}
+    {% if option.help %}<p class="hint">{{ option.help }}</p>{% endif %}
+  {% endif %}
+
+  {% if option.aliases|length > 1 %}
+    <p class="aliases">also: {% for alias in option.aliases %}<code>{{ alias }}</code>{% if not loop.last %} {% endif %}{% endfor %}</p>
+  {% endif %}
+</div>
+{% endmacro %}

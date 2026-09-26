@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ spec.tool_name }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <h1>{{ spec.tool_name }}</h1>
+  {% if spec.description %}
+    <p class="lede">{{ spec.description }}</p>
+  {% else %}
+    <p class="lede muted">No description was found in this tool's help output.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Commands</h2>
+  {% if commands %}
+    <ul class="cmd-list">
+      {% for command in commands %}
+        <li>
+          <a class="cmd" href="/command/{{ command.slug }}">
+            <span class="cmd-name">{{ command.label }}</span>
+            {% if command.help %}<span class="cmd-help">{{ command.help }}</span>{% endif %}
+            <span class="cmd-meta">{{ command.option_count }} option{{ '' if command.option_count == 1 else 's' }}</span>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">This tool exposes no commands.</p>
+  {% endif %}
+</section>
+{% endblock %}

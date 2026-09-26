@@ -1,0 +1,12 @@
+{#-
+  Error fragment returned by /run/* on validation failure and by /cancel/*.
+
+  Returned as an HTMX swap target, so it must be a self-contained fragment
+  (no `extends`): the client swaps it into #result directly.
+-#}
+<div class="result" id="result-error">
+  <header class="result-head">
+    <span class="status status-failed">error</span>
+  </header>
+  <p class="hint">{{ message }}</p>
+</div>

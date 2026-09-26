@@ -67,10 +67,14 @@ _LOOKS_LIKE_TYPE_CELL = re.compile(
 #: not arguments the user fills in.
 _PLACEHOLDER_METAVARS = frozenset({"OPTIONS", "ARGS", "COMMAND", "COMMANDS", "...", "[ARGS]...", "[OPTIONS]"})
 
-#: click metavar -> HelpUI type, applied before prose sniffing.
+#: click metavar -> HelpUI type. This is a *fallback*: it is consulted only when
+#: :func:`~helpui.parsers.base.infer_type` finds no signal, because the table
+#: cannot express the "an unambiguous prose word beats a generic metavar" rule.
+#: ``TEXT`` must not be listed as a decisive ``str``: click spells every plain
+#: string option ``TEXT``, including ``--password TEXT``, so letting the table
+#: win here would short-circuit the prose sniff and render a credential in
+#: clear text.
 _METAVAR_TYPES: dict[str, str] = {
-    "TEXT": "str",
-    "STRING": "str",
     "INTEGER": "int",
     "INT": "int",
     "FLOAT": "float",
@@ -363,11 +367,19 @@ class ClickParser(HelpParser):
             metavar = ""
 
         is_flag = metavar == "" and not type_cell
+        # Ordering (see SPEC.md): an explicit choice list or angle-typed cell wins
+        # outright; then prose sniffing, which recognises unambiguous widget words
+        # (`password`, `passphrase`, `directory`, `file`); then the metavar table
+        # as the fallback for metavars with no prose signal (`INTEGER`, `FLOAT`).
+        # The table must NOT be consulted first: click spells every plain string
+        # `TEXT`, so `TEXT -> str` would swallow `--password TEXT` and show the
+        # password in clear text.
         option_type = (
             self._type_from_angle(type_source, choices)
             or ("bool" if is_flag else "")
-            or _METAVAR_TYPES.get(metavar.upper(), "")
             or infer_type(metavar, _prose_only(help_text), choices=choices)
+            or _METAVAR_TYPES.get(metavar.upper(), "")
+            or "str"
         )
 
         default = extract_default(help_text)
@@ -454,7 +466,14 @@ class ClickParser(HelpParser):
 
     @staticmethod
     def _type_from_angle(type_cell: str, choices: list[str] | None) -> str:
-        """Map typer's ``<int>`` / ``<path>`` / ``<float>`` cells to a type."""
+        """Map typer's ``<int>`` / ``<path>`` / ``<float>`` cells to a type.
+
+        Returns ``""`` (not ``"str"``) for typer's generic ``<str>``/``<text>``
+        cell: typer prints that for *every* plain string option, including
+        ``--password <str>``, so treating it as decisive would short-circuit the
+        prose sniff and render a credential in clear text. Callers fall through
+        to :func:`~helpui.parsers.base.infer_type` and only then to ``"str"``.
+        """
         if choices:
             return "choice"
         match = _ANGLE_TYPE_RE.search(type_cell)
@@ -471,8 +490,6 @@ class ClickParser(HelpParser):
             return "file"
         if inner in {"dir", "directory"}:
             return "dir"
-        if inner in {"str", "text", "string"}:
-            return "str"
         return ""
 
     @staticmethod

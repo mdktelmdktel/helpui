@@ -1,309 +1,281 @@
-# HelpUI — Specification and Design Decisions
+# HelpUI —— 规格说明与设计决策
 
-This document records **every trade-off HelpUI made on its own** in response to
-ambiguity in the requirements, as required by the project brief. It is the
-authoritative place to check "why does it behave like this?".
+本文档记录 **HelpUI 自行做出的每一处取舍**，用于回应需求中的含糊之处，这是项目任务书的要求。
+判断「它为什么是这个行为」时，以本文档为准。
 
-Status legend: **[D] Decided** (implemented and tested), **[L] Limitation**
-(accepted, documented, not fixed), **[O] Open** (deferred to a later phase).
----
-
-## 1. Scope
-
-### 1.1 What HelpUI is
-
-Given a non-interactive CLI tool, HelpUI runs `<tool> --help`, parses the output
-into a structured `CLISpec`, and generates a standalone FastAPI + HTMX web
-application that renders that spec as a form, executes the tool, and shows the
-result.
-
-### 1.2 What HelpUI is not (v1)
-
-* No interactive TUI/REPL wrapping.
-* No arbitrary help-format parsing (see §4.5).
-* No authentication, multi-tenancy or RBAC.
-* No Playwright/browser-automation tests.
-* No remote or distributed execution.
-* No frontend framework/build step.
+状态图例：**[D] 已决策**（已实现并有测试）、**[L] 限制**（接受、已记录、不修）、
+**[O] 待定**（推迟到后续阶段）。
 
 ---
 
-## 2. Technology decisions
+## 1. 范围
 
-### [D] 2.1 Standard library over ORM
+### 1.1 HelpUI 是什么
 
-The brief allowed "SQLite (`sqlite3` or SQLModel), prefer fewer dependencies".
-We chose **`sqlite3` from the standard library**. Rationale: the history table
-schema is a handful of columns written by one process; an ORM adds a dependency
-and a migration story for no benefit at this size. `sqlite3` also keeps the
-generated project runnable with a minimal dependency set.
+给定一个非交互式的命令行工具，HelpUI 运行 `<tool> --help`，把输出解析成结构化的
+`CLISpec`，再生成一个独立的 FastAPI + HTMX Web 应用：把这个 spec 渲染成表单、
+执行工具、展示结果。
 
-### [D] 2.2 `dataclasses` over Pydantic for the spec model
+### 1.2 HelpUI 不是什么（v1）
 
-`CLISpec`/`CLICommand`/`CLIOption` are plain `@dataclass`es with hand-written
-`to_dict`/`from_dict`. Pydantic would validate more, but FastAPI is the only
-place that needs validation and it does not need the *spec* model validated —
-the spec is produced by our own parser, not by a user. Using dataclasses avoids
-a hard dependency in the `scan` code path entirely, so `helpui scan` works with
-only the standard library available.
-
-### [D] 2.3 `type` is a `str`, not an `Enum`
-
-`CLIOption.type` is a plain string from the vocabulary
-`str|int|float|bool|choice|file|dir|password`. Reasons:
-
-1. `json.dumps` works with no custom encoder.
-2. An unrecognised type from a future parser degrades to `str` (a text input)
-   instead of raising during deserialisation — a partially useful form beats a
-   crash.
-3. `spec.json` stays human-readable and forward-compatible.
-
-`CLIOption.__post_init__` enforces the vocabulary by rewriting unknown values to
-`str`.
-
-### [D] 2.4 `default` is `str | None`, not a typed value
-
-The help text is the only source of truth, and it prints defaults as text
-(`[default: out.txt]`). Parsing `"3"` into the int `3` would invent type
-information the CLI never declared in its help output. The runtime
-(Phase 3) converts to the declared type at submission time, where a conversion
-failure is a user-visible validation error rather than a silent misparse.
+* 不做交互式 TUI/REPL 包装。
+* 不解析任意格式的 help（见 §4.5）。
+* 不做认证、多租户或 RBAC。
+* 不做 Playwright／浏览器自动化测试。
+* 不做远程或分布式执行。
+* 不引入前端框架，也没有前端构建步骤。
 
 ---
 
-## 3. Data model
+## 2. 技术决策
 
-### [D] 3.1 Frozen field names
+### [D] 2.1 用标准库，不用 ORM
 
-The required model is implemented verbatim. Two **additive** fields were added
-in Phase 1 because the form renderer needs them and adding them later would
-change `spec.json`:
+任务书允许「SQLite（`sqlite3` 或 SQLModel），偏好更少的依赖」。
+我们选择 **标准库的 `sqlite3`**。理由：历史记录表只是几个字段，且只由单个进程写入；
+在这个规模上，ORM 只会多一个依赖和一套迁移方案，没有收益。`sqlite3` 还能让生成出来的
+项目以最小依赖集运行。
 
-| Field | Type | Why |
+### [D] 2.2 spec 模型用 `dataclasses`，不用 Pydantic
+
+`CLISpec`／`CLICommand`／`CLIOption` 是普通的 `@dataclass`，配手写的
+`to_dict`／`from_dict`。Pydantic 能提供更多校验，但唯一需要校验的地方是 FastAPI，
+而它并不需要校验 *spec* 模型——spec 由我们自己的解析器产出，不是用户输入的。
+用 dataclasses 可以让 `scan` 这条代码路径完全不引入硬依赖，
+所以只装了标准库也能跑 `helpui scan`。
+
+### [D] 2.3 `type` 是 `str`，不是 `Enum`
+
+`CLIOption.type` 是普通字符串，取值限定在
+`str|int|float|bool|choice|file|dir|password` 这个词表内。理由：
+
+1. `json.dumps` 直接可用，不需要自定义 encoder。
+2. 将来某个解析器给出无法识别的类型时，降级成 `str`（文本框）
+   而不是在反序列化时抛异常——能部分可用的表单胜过崩溃。
+3. `spec.json` 保持人类可读且向前兼容。
+
+`CLIOption.__post_init__` 通过把未知取值改写为 `str` 来强制这个词表。
+
+### [D] 2.4 `default` 是 `str | None`，不是带类型的值
+
+help 文本是唯一的真相来源，而它把默认值打印成文本（`[default: out.txt]`）。
+把 `"3"` 解析成整数 `3`，等于凭空发明了命令行工具从未在 help 里声明过的类型信息。
+运行时（阶段 3）在提交时才转换成声明的类型，此时转换失败会成为用户可见的校验错误，
+而不是一次静默的误解析。
+
+---
+
+## 3. 数据模型
+
+### [D] 3.1 字段名冻结
+
+要求的模型按原样实现。阶段 1 额外加了两个 **增量** 字段，因为表单渲染需要它们，
+而以后再补会改变 `spec.json`：
+
+| 字段 | 类型 | 原因 |
 |---|---|---|
-| `CLIOption.value_name` | `str` | The metavar as spelled in help (`FILE`), used as the input placeholder so users see what the tool expects. |
-| `CLIOption.aliases` | `list[str]` | Every spelling (`["-o", "--output"]`). Needed to *build* the argv list (Phase 3) and to show both forms in the UI. Without it, `primary_flag` cannot prefer the long form. |
+| `CLIOption.value_name` | `str` | help 里写的 metavar（`FILE`），用作输入框的 placeholder，让用户看到工具期望什么。 |
+| `CLIOption.aliases` | `list[str]` | 所有拼写形式（`["-o", "--output"]`）。构建 argv 列表（阶段 3）和界面上同时显示两种形式都需要它。没有它，`primary_flag` 就无法优先选择长选项。 |
 
-Both are optional with defaults, so a `spec.json` written by an older version
-still loads.
+两者都有默认值且可选，所以旧版本写出的 `spec.json` 仍能加载。
 
-### [D] 3.2 `CLICommand.subcommands` is a flat list of names
+### [D] 3.2 `CLICommand.subcommands` 是扁平的名称列表
 
-Nested subcommands (typer's `admin reset`) are represented as:
+嵌套子命令（typer 的 `admin reset`）表示为：
 
-* the root command listing `["admin"]` in `subcommands`, and
-* a **separate top-level `CLICommand`** named `"admin reset"`.
+* 根命令在 `subcommands` 里列出 `["admin"]`，以及
+* 一个 **独立的顶层 `CLICommand`**，名为 `"admin reset"`。
 
-Rationale: a recursive `CLICommand` tree would make `spec.json` and the
-generated routes recursive, complicating both. A dotted-name flat list keeps
-one command = one form = one route, preserves the hierarchy in the name, and
-renders as a simple list of links.
+理由：递归的 `CLICommand` 树会让 `spec.json` 和生成的路由都变成递归，
+两边都会变复杂。带点的扁平列表保持「一个命令 = 一个表单 = 一个路由」，
+把层级关系保留在名字里，并且渲染成一个简单的链接列表。
 
-### [D] 3.3 `name` for positionals is the metavar
+### [D] 3.3 位置参数的 `name` 就是 metavar
 
-Positionals have no `--flag`. `name` holds the metavar exactly as argparse/click
-printed it (`input_file`, `INPUT_FILE`), and `dest` holds the Python-safe form.
-The runtime normalises case when building argv.
+位置参数没有 `--flag`。`name` 保存 argparse／click 打印出来的 metavar 原样
+（`input_file`、`INPUT_FILE`），`dest` 保存 Python 安全的写法。
+运行时在构建 argv 时统一大小写。
 
-### [D] 3.4 `required` on positionals
+### [D] 3.4 位置参数的 `required`
 
-argparse and click positionals are required unless declared otherwise, so
-HelpUI marks them `required=True` when they are not bracketed `[...]` in the
-usage line.
+argparse 和 click 的位置参数默认必填，除非另行声明，所以当它们在 usage 行里
+不被 `[...]` 括起时，HelpUI 标记为 `required=True`。
 
 ---
 
-## 4. Parsing
+## 4. 解析
 
-### [D] 4.1 Detection is feature-based and conservative, on help text only
+### [D] 4.1 探测基于特征且保守，只看 help 文本
 
-`detect_parser` examines the captured help text in this order:
+`detect_parser` 按以下顺序检查捕获到的 help 文本：
 
-1. **typer** — rich table panels are present.
-2. **argparse** — lower-case `usage:` *and* at least one of `positional
-   arguments:` / `optional arguments:` / `options:`, and no capitalised click
-   headers.
-3. **click** — capitalised `Usage:` plus at least one of `Options:` /
-   `Commands:` / `Arguments:`.
-4. **unknown** — anything else.
+1. **typer** —— 存在 rich 表格面板。
+2. **argparse** —— 小写 `usage:` *并且* 至少含
+   `positional arguments:` / `optional arguments:` / `options:` 之一，
+   且不含 click 的大写表头。
+3. **click** —— 大写 `Usage:` 加上 `Options:` / `Commands:` / `Arguments:`
+   至少之一。
+4. **unknown** —— 其余情况。
 
-A wrong guess produces a broken form, whereas `unknown` produces a clean,
-actionable error, so the detector prefers `unknown` over a shaky guess.
-`confidence` is reported as `high` (structural match) or `low` (heuristic) and
-is surfaced by `helpui scan` for debugging.
+猜错会生成一个坏表单，而 `unknown` 会给出干净、可操作的错误，
+所以探测器宁可返回 `unknown`，也不做没把握的猜测。
+`confidence` 报告为 `high`（结构匹配）或 `low`（启发式），
+并由 `helpui scan` 展示出来以便排查。
 
-### [D] 4.2 Typer detection needs both renderings
+### [D] 4.2 typer 探测需要两种渲染形式
 
-Typer draws its help with rich, which uses:
+typer 用 rich 绘制 help，rich 会用：
 
-* **box-drawing** panels (`┌─ Options ────┐`) when colour is available, and
-* **ASCII** panels (`+- Options ----+`) otherwise.
+* **制表符边框**面板（`┌─ Options ────┐`），在有颜色时；
+* **ASCII** 面板（`+- Options ----+`），否则。
 
-Verified against typer 0.27 + rich on Windows (GBK console). Both forms are
-matched. **Typer without rich installed is textually identical to click**, so:
+已在 Windows（GBK 控制台）上用 typer 0.27 + rich 验证。两种形式都会被匹配。
+**没装 rich 的 typer 与 click 在文本上完全相同**，所以：
 
-* the detector labels it `click`, and
-* `_source_imports_typer` sniffs the target `.py` for `import typer` as a
-  *tie-breaker only* — applied after the text test already said "click-shaped",
-  and only for an existing `.py` file.
+* 探测器把它标记为 `click`，并且
+* `_source_imports_typer` 会嗅探目标 `.py` 里的 `import typer`，但**仅作为平局判定**——
+  只在文本判断已经得出「形如 click」之后才应用，且只对已存在的 `.py` 文件生效。
 
-**[L]** A compiled/binary typer tool without rich is therefore reported as
-`click`. This is harmless because typer *is* click at that layer: the parse is
-correct, only the `parser_kind` label differs.
+**[L]** 因此，没装 rich 的编译型／二进制 typer 工具会被报告为 `click`。
+这没有危害，因为在这一层上 typer *就是* click：解析是正确的，只有 `parser_kind`
+这个标签不同。
 
-### [D] 4.3 Typer reuses the click parser
+### [D] 4.3 typer 复用 click 解析器
 
-`TyperParser` subclasses `ClickParser` and only adds a normalisation step that
-converts panels into click-shaped text (`typer_parser.normalise_rich_help`).
-This is exactly what the brief asked for ("typer reuses click parsing logic,
-differing only in detection"), and it means a click fix automatically fixes
-typer.
+`TyperParser` 继承 `ClickParser`，只增加一步归一化，把面板转换成 click 形状的文本
+（`typer_parser.normalise_rich_help`）。这正是任务书要求的
+（「typer 复用 click 的解析逻辑，只在探测上有差异」），
+而且这意味着修好 click 就自动修好了 typer。
 
-The normaliser must run before descriptions are extracted, because
-`first_paragraph` on raw panel text returns panel rows. `TyperParser.parse`
-therefore re-derives `spec.description` from the normalised text.
+归一化必须在提取描述之前运行，因为对原始面板文本调用 `first_paragraph`
+会返回面板的行。因此 `TyperParser.parse` 会从归一化后的文本重新推导 `spec.description`。
 
-### [D] 4.4 Framework-specific quirks handled explicitly
+### [D] 4.4 显式处理的框架特有怪癖
 
-| Observation (verified against real fixture output) | Handling |
+| 观察（已用真实 fixture 输出验证） | 处理方式 |
 |---|---|
-| argparse wraps its `usage:` line onto indented continuation lines | `first_paragraph` and `_usage_description` skip indented continuations, otherwise descriptions become `"COMMAND ..."` |
-| argparse prints an unindented **epilog** after the last section | `split_sections` ends a section at an unindented line that follows a blank line, so the epilog is not parsed as a phantom option |
-| argparse renders subcommands nested under a `COMMAND` metavar | `_subcommands_from_positionals` recovers them from the more-indented rows |
-| argparse's `{json,csv}` choice metavar appears in `positional arguments:` | Treated as a choice positional, **not** as subcommand names |
-| argparse's default formatter does **not** print `(default: 3)` for `type=int, default=3` | `default` is `None`. HelpUI does not invent defaults. **[L]** see §4.6 |
-| click separates flags from help with **two or more spaces** | Rows split on the first multi-space run, so `-v, --verbose    Enable verbose logging` is not read as `metavar="Enable verbose logging"` |
-| click appends `[default: x]`, `[required]`, `[env var: X]`, `[a\|b\|c]` at the end of the help cell | Parsed as annotations; choices come from the bracket form |
-| typer splits the *flags cell itself* across columns (`--output  -o  <str>`) | `_split_row` scans leading cells while they look like flags or types, so both aliases and the type survive |
-| typer marks required arguments with a leading `*` | Stripped and recorded as `required=True` |
-| typer renders `[OPTIONS]`, `[ARGS]...`, `COMMAND` in the usage line | Recognised as structural placeholders, never as user-fillable arguments |
-| a subcommand's usage line echoes the command path (`admin reset`) | Stripped for the known command name so no phantom positional appears |
+| argparse 把 `usage:` 行折行到缩进的续行上 | `first_paragraph` 和 `_usage_description` 跳过缩进续行，否则描述会变成 `"COMMAND ..."` |
+| argparse 在最后一节之后打印不缩进的 **epilog** | `split_sections` 在「空行之后的不缩进行」处结束一节，这样 epilog 不会被当成幽灵选项解析 |
+| argparse 把子命令嵌套渲染在 `COMMAND` metavar 之下 | `_subcommands_from_positionals` 从缩进更深的行里把它们找回来 |
+| argparse 的 `{json,csv}` 选项 metavar 出现在 `positional arguments:` 里 | 当作可选项的位置参数，**而不是**子命令名 |
+| argparse 默认的 formatter 对 `type=int, default=3` **不**打印 `(default: 3)` | `default` 为 `None`。HelpUI 不发明默认值。**[L]** 见 §4.6 |
+| click 用 **两个及以上空格** 分隔选项与 help | 行按第一个连续空格处分隔，所以 `-v, --verbose    Enable verbose logging` 不会被读成 `metavar="Enable verbose logging"` |
+| click 在 help 单元格末尾追加 `[default: x]`、`[required]`、`[env var: X]`、`[a\|b\|c]` | 解析为注解；choices 来自方括号形式 |
+| typer 把 *选项单元格本身* 拆到多列（`--output  -o  <str>`） | `_split_row` 扫描开头的单元格，只要它们看起来像选项或类型，于是两个别名和类型都能保留 |
+| typer 用前导 `*` 标记必填参数 | 剥离并记为 `required=True` |
+| typer 在 usage 行里渲染 `[OPTIONS]`、`[ARGS]...`、`COMMAND` | 识别为结构占位符，绝不当作可填参数 |
+| 子命令的 usage 行会回显命令路径（`admin reset`） | 对已知命令名做剥离，避免出现幽灵位置参数 |
 
-### [D] 4.5 Only three frameworks are supported
+### [D] 4.5 只支持三种框架
 
-`unknown` is a **first-class outcome**, not an error path bolted on. Nothing
-attempts a generic/man-page parse, per the brief's "no arbitrary help-format
-parsing". A `NAME`/`SYNOPSIS` style page yields `unknown_framework`.
+`unknown` 是 **一等结果**，不是事后补上的错误分支。按任务书「不解析任意格式的 help」，
+没有任何代码去尝试通用的／man page 式解析。`NAME`／`SYNOPSIS` 风格的页面会得到
+`unknown_framework`。
 
-### [L] 4.6 Known parsing limitations
+### [L] 4.6 已知的解析限制
 
-1. **argparse numeric types are invisible.** `add_argument("--retries",
-   type=int)` produces `--retries RETRIES` in help — there is no textual signal
-   that it is an int. HelpUI reports `str`. *Mitigation:* the runtime accepts a
-   value only if the target tool accepts it, and the resulting error surfaces in
-   the log pane. A tool using
-   `argparse.ArgumentDefaultsHelpFormatter` or an explicit `metavar="INT"`
-   *is* typed correctly.
-2. **`--token` is not a password field.** Type sniffing is conservative: only
-   the words *password* / *passphrase* (in prose) or metavars
-   `PASSWORD`/`SECRET`/`PASSPHRASE` select the password widget. A credential
-   named `--token` renders as a plain text input, because guessing wrong *hides*
-   data the user needs to verify.
+1. **argparse 的数字类型不可见。** `add_argument("--retries", type=int)`
+   在 help 里只产生 `--retries RETRIES`——没有任何文本信号表明它是整数。
+   HelpUI 报告为 `str`。*缓解措施：* 运行时仅当目标工具接受该值时才接受它，
+   产生的错误会显示在日志面板里。使用 `argparse.ArgumentDefaultsHelpFormatter`
+   或显式 `metavar="INT"` 的工具 *会* 被正确识别类型。
+2. **`--token` 不是密码字段。** 类型嗅探是保守的：只有 *password* / *passphrase*
+   这两个词（出现在散文中）或 metavar `PASSWORD`／`SECRET`／`PASSPHRASE`
+   才会选中密码控件。名为 `--token` 的凭据渲染成普通文本框，
+   因为猜错会 *遮住* 用户需要核对的数据。
 
-   **Fixed in Phase 2.** The rule above was correct but was *not* what the code
-   did for click/typer: the metavar table (`_METAVAR_TYPES`, mapping `TEXT` →
-   `str`) and `_type_from_angle()` (which returns `"str"` for typer's `<str>`
-   column) are both consulted *before* the prose sniff, and both return a truthy
-   value, so the `or` chain short-circuited **in two places** and `infer_type`
-   was never reached. Click and typer spell a `str` option's metavar `TEXT`/`<str>`,
-   so their `--password` options were reported as `str` and rendered as **plain
-   text** — a password shown in clear. The fix lets the prose sniff win for the
-   password vocabulary. Verified after the fix: `--password` is `password` for
-   all three fixtures (`sample_argparse.py`, `sample_click.py`,
-   `sample_typer.py`), while `--token` remains `str`. **[D]**
-3. **`--config` vs `--config-file`.** A metavar of `PATH` is ambiguous; the
-   prose decides (`directory|folder` → `dir`, otherwise `file`).
-4. **Option descriptions are not reformatted.** `help` keeps the raw prose,
-   including click's `[default: x]` annotation, so users can see exactly what
-   the tool said.
-5. **Multi-byte/colourised help.** `NO_COLOR=1`, `TERM=dumb` and `COLUMNS=100`
-   are forced for every help invocation so output is stable and ANSI-free.
-   A tool that ignores these may produce colour escapes in the UI.
-6. **Windows path with spaces in a tool *string*.** `shlex` splitting of
-   `--subcommand`-style strings follows the platform rules; pass a real file
-   path (which is handled directly, without splitting) when the path contains
-   spaces.
-7. **argparse's required options are reported as optional.** This is a
-   **fixable parser defect, not a framework difference.** argparse signals
-   "required" structurally, through the *usage line*: a required option appears
-   unbracketed (`--token TOKEN`) while an optional one is bracketed
-   (`[--tag TAG]`). It never writes the string "required" into the option's own
-   help cell. `argparse_parser` computes
-   `required=bool(re.search(r"\brequired\b(?!:)", help_text))` against **that
-   help cell only**, so the match always fails and every argparse option comes
-   back `required=False`. Click and typer instead append a literal `[required]`
-   annotation, which `click_parser.infer_required` does parse.
-   Measured on the fixtures' `--token` (declared required in all three):
+   **阶段 2 已修复。** 上面的规则是对的，但 click／typer 的代码 *并非* 如此：
+   metavar 表（`_METAVAR_TYPES`，把 `TEXT` 映射为 `str`）和 `_type_from_angle()`
+   （对 typer 的 `<str>` 列返回 `"str"`）都在散文嗅探 *之前* 被查询，
+   而两者都返回真值，于是 `or` 链 **在两处** 短路，`infer_type` 从未被执行。
+   click 和 typer 把 `str` 选项的 metavar 写成 `TEXT`／`<str>`，
+   所以它们的 `--password` 被报告为 `str` 并渲染成 **明文**——密码直接显示出来。
+   修复让散文嗅探在密码词表上优先。修复后已验证：三个 fixture
+   （`sample_argparse.py`、`sample_click.py`、`sample_typer.py`）的 `--password`
+   都是 `password`，而 `--token` 仍为 `str`。**[D]**
+3. **`--config` 与 `--config-file`。** metavar 为 `PATH` 时有歧义；
+   由散文决定（`directory|folder` → `dir`，否则 `file`）。
+4. **选项描述不做重排。** `help` 保留原始散文，包括 click 的 `[default: x]` 注解，
+   这样用户能确切看到工具说了什么。
+5. **多字节／带颜色的 help。** 每次 help 调用都强制设置 `NO_COLOR=1`、`TERM=dumb`
+   和 `COLUMNS=100`，以保证输出稳定且无 ANSI 转义。
+   忽略这些设置的工具可能在界面上产生颜色转义码。
+6. **工具 *字符串* 里的 Windows 路径含空格。** `--subcommand` 这类字符串的
+   `shlex` 切分遵循平台规则；路径含空格时请传真实的文件路径
+   （文件路径是直接处理的，不经过切分）。
+7. **argparse 的必填选项被报告为可选。** 这是 **可修的解析器缺陷，不是框架差异。**
+   argparse 用 *usage 行* 以结构化方式表达「必填」：必填选项不带方括号
+   （`--token TOKEN`），可选选项带方括号（`[--tag TAG]`）。
+   它从不把 "required" 这个词写进该选项自己的 help 单元格。而 `argparse_parser`
+   是拿 `required=bool(re.search(r"\brequired\b(?!:)", help_text))`
+   去匹配 **那个 help 单元格**，所以永远匹配不上，每个 argparse 选项都返回
+   `required=False`。click 和 typer 则会追加一个字面量 `[required]` 注解，
+   `click_parser.infer_required` 能正确解析。
+   在三个 fixture 的 `--token`（三者都声明为必填）上实测：
 
-   | Framework | "required" occurrences in help | `--token required` |
+   | 框架 | help 里 "required" 出现次数 | `--token required` |
    |---|---|---|
-   | argparse | **0** | `False` ← defect |
+   | argparse | **0** | `False` ← 缺陷 |
    | click | 1 | `True` |
-   | typer | 1 | `False` (option row carries no `[required]`) |
+   | typer | 1 | `False`（选项行没有 `[required]`） |
 
-   Fixing it means reading usage-line brackets (for argparse) rather than
-   grepping the help cell. Recorded here so the behaviour is deliberate rather
-   than accidental. **[L]**
+   修法是（对 argparse）改为读取 usage 行的方括号，而不是在 help 单元格里
+   grep 这个词。记录于此，是为了让这个行为是「有意保留」而非「意外如此」。**[L]**
 
-### [D] 4.7 Parsers never raise on malformed input
+### [D] 4.7 解析器遇到畸形输入绝不抛异常
 
-A parser that raises turns a partially usable tool into a hard failure. Each
-parser returns whatever it could understand and ignores the rest. The
-`scanner_service` still wraps calls defensively (`except Exception`) so a parser
-bug surfaces as `parse_failed` rather than a traceback.
+解析器抛异常会把一个部分可用的工具变成硬失败。每个解析器返回它能理解的部分，
+忽略其余部分。`scanner_service` 仍然做了防御性包裹（`except Exception`），
+所以解析器自身的 bug 会表现为 `parse_failed`，而不是一个 traceback。
 
 ---
 
-## 5. Scanner
+## 5. 扫描器
 
-### [D] 5.1 `shell=False` everywhere, argv as a list
+### [D] 5.1 处处 `shell=False`，argv 用列表
 
-Mandated by the brief and enforced by tests: `run_help` builds a list and passes
-`shell=False`. Tests assert that `; rm -rf /`, `$(whoami)` and `` `id` `` reach
-the child process **literally and unexpanded**.
+任务书强制要求，并由测试保障：`run_help` 构建列表并传 `shell=False`。
+测试断言 `; rm -rf /`、`$(whoami)` 和 `` `id` `` **原样、未展开** 地到达子进程。
 
-### [D] 5.2 `subcommand` is split on whitespace into separate argv entries
+### [D] 5.2 `subcommand` 按空白切分成多个 argv 项
 
-`--subcommand "admin reset"` is a *path*, so it becomes two argv entries. The
-consequence is documented and tested: `--subcommand "; rm -rf /"` becomes five
-literal arguments rather than one. There is no shell involved, so this is a
-semantics note, not a vulnerability.
+`--subcommand "admin reset"` 是一个 *路径*，所以它变成两个 argv 项。
+后果已被记录并测试：`--subcommand "; rm -rf /"` 变成五个字面量参数，而不是一个。
+这里不涉及 shell，所以这是语义说明，不是漏洞。
 
-### [D] 5.3 Help invocations cannot hang
+### [D] 5.3 help 调用不会挂起
 
-Every help call:
+每次 help 调用：
 
-* has a timeout (default 20s);
-* forces `NO_COLOR`/`TERM=dumb`/`COLUMNS` for stable output;
-* sets `stdin=DEVNULL`, so a tool that ignores `--help` and reads stdin exits
-  immediately instead of hanging the scan.
+* 都有超时（默认 20 秒）；
+* 强制 `NO_COLOR`／`TERM=dumb`／`COLUMNS` 以获得稳定输出；
+* 设置 `stdin=DEVNULL`，这样忽略 `--help` 转而读 stdin 的工具会立即退出，
+  而不是把扫描卡住。
 
-### [D] 5.4 Subcommand expansion is bounded and fault-tolerant
+### [D] 5.4 子命令展开有深度上限且容错
 
-`MAX_SUBCOMMAND_DEPTH = 2` (enough for `admin reset`). A subcommand whose help
-cannot be fetched is recorded as a **warning** on `ScanReport` and printed to
-stderr; the rest of the spec is still usable.
+`MAX_SUBCOMMAND_DEPTH = 2`（足够覆盖 `admin reset`）。取不到 help 的子命令会作为
+**警告** 记录在 `ScanReport` 上并打印到标准错误；spec 的其余部分仍然可用。
 
-### [D] 5.5 Non-zero exit of `--help` is a failure
+### [D] 5.5 `--help` 非零退出即失败
 
-If the tool does not recognise a subcommand, click prints the *group's* usage
-and exits non-zero. Treating that page as the subcommand's spec would silently
-generate a form for the wrong command, so `_scan_one_subcommand` rejects it with
-`subcommand_not_found`.
+如果工具不认识某个子命令，click 会打印 *命令组* 的 usage 并以非零退出。
+把那一页当作子命令的 spec，会静默地为一个错误的命令生成表单，
+所以 `_scan_one_subcommand` 用 `subcommand_not_found` 拒绝它。
 
 ---
 
-## 6. CLI contract
+## 6. CLI 契约
 
-### [D] 6.1 JSON on stdout, diagnostics on stderr
+### [D] 6.1 JSON 走标准输出，诊断走标准错误
 
-`scan` and `test` emit exactly one JSON document on stdout so
-`helpui scan tool --json | jq` is always safe. Warnings and human errors go to
-stderr. Verified by a test asserting no extra output on stdout.
+`scan` 和 `test` 在标准输出上只输出一个 JSON 文档，所以
+`helpui scan tool --json | jq` 永远安全。警告和人类可读的错误走标准错误。
+有测试断言标准输出上没有多余内容。
 
-### [D] 6.2 A versioned envelope, and `ok` as a string
+### [D] 6.2 带版本的信封，以及 `ok` 是字符串
 
-`scan --json` prints an *envelope*, not a bare `CLISpec`:
+`scan --json` 打印的是一个 *信封*，不是裸的 `CLISpec`：
 
 ```json
 {
@@ -315,53 +287,49 @@ stderr. Verified by a test asserting no extra output on stdout.
 }
 ```
 
-The brief said "stable, machine-readable fields". The spec itself stays exactly
-the required shape under `spec`, while the envelope carries detection
-confidence and warnings — information `generate` needs and users debugging a
-scan want. `schema_version` lets a future change be detected instead of
-silently misread.
+任务书要求「稳定的、机器可读的字段」。spec 本身在 `spec` 下保持要求的结构原样，
+信封则承载探测置信度和警告——这些是 `generate` 需要的信息，
+也是排查扫描问题的用户想看到的信息。`schema_version` 让将来的变更可以被检测到，
+而不是被静默误读。
 
-**`ok` is the string `"true"`/`"false"`, not a JSON boolean** — matching the
-brief's literal `{"ok": true/false, "checks": [...]}` example for `test`. The
-same convention is used by `scan` so the two commands are consistent. A caller
-can safely test `payload["ok"] == "false"`. **[O]** If this proves awkward for
-consumers, Phase 5 may emit a real boolean in both commands; the decision is
-recorded here so the change is deliberate.
+**`ok` 是字符串 `"true"`／`"false"`，不是 JSON 布尔值**——这是为了对齐任务书里
+给 `test` 的字面示例 `{"ok": true/false, "checks": [...]}`。`scan` 采用同一约定，
+使两条命令保持一致。调用方可以安全地判断 `payload["ok"] == "false"`。
+**[O]** 如果这对使用者造成了不便，阶段 5 可以在两条命令里都改成真正的布尔值；
+把决策记录在这里，是为了让这个改动是有意为之。
 
-### [D] 6.3 Error codes are a closed, stable set
+### [D] 6.3 错误码是封闭、稳定的集合
 
-| Code | Meaning |
+| 错误码 | 含义 |
 |---|---|
-| `tool_not_found` | The tool does not exist / is not on PATH |
-| `no_help_output` | Running the tool failed, or it printed nothing usable |
-| `unknown_framework` | Help was captured but is not argparse/click/typer |
-| `subcommand_not_found` | The named subcommand does not exist |
-| `parse_failed` | A parser raised (defensive; should not happen) |
-| `internal_error` | Anything unexpected, so a pipe never sees a traceback |
+| `tool_not_found` | 工具不存在／不在 PATH 上 |
+| `no_help_output` | 运行工具失败，或它没有打印任何可用内容 |
+| `unknown_framework` | 抓到了 help，但不属于 argparse/click/typer |
+| `subcommand_not_found` | 指定的子命令不存在 |
+| `parse_failed` | 某个解析器抛异常（防御性；不应发生） |
+| `internal_error` | 任何意外情况，保证管道里永远看不到 traceback |
 
-### [D] 6.4 Exit codes
+### [D] 6.4 退出码
 
-`0` success, `1` operation failed, `2` bad CLI usage (argparse's default).
+`0` 成功，`1` 操作失败，`2` 命令行用法错误（argparse 的默认行为）。
 
-### [D] 6.5 Stubs for later subcommands (historical, Phase 1)
+### [D] 6.5 后续子命令的占位实现（历史记录，阶段 1）
 
-`generate`, `serve` and `test` were declared in `--help` from Phase 1 so the CLI
-contract was fixed up front. As shipped in Phase 1 (commit `7870d9e`) their
-modules carried correct type signatures but raised `NotImplementedError`; the CLI
-caught the resulting `ImportError` path and reported
-`error: ... is not implemented yet (planned for phase N)` with exit 1.
+`generate`、`serve` 和 `test` 从阶段 1 起就声明在 `--help` 里，以便提前固定 CLI 契约。
+阶段 1 交付时（commit `7870d9e`），它们的模块带有正确的类型签名但会抛
+`NotImplementedError`；CLI 捕获随之而来的 `ImportError` 路径并输出
+`error: ... is not implemented yet (planned for phase N)`，退出码 1。
 
-**All four commands are now implemented** — `scan`, `generate`, `serve` and
-`test`. The stub path is no longer reachable for any subcommand, and `--help`
-contains nothing labelled "not implemented yet". The stub mechanism is retained
-only as history: it is what let Phase 1 publish a stable CLI contract without
-shipping fake behaviour.
+**四条命令现在都已实现**——`scan`、`generate`、`serve` 和 `test`。
+任何子命令都不再走占位路径，`--help` 里也没有任何标注为 "not implemented yet" 的项。
+保留这段说明只是为了记录历史：正是这个机制让阶段 1 能在不交付假行为的前提下
+公布一个稳定的 CLI 契约。
 
-### [D] 6.6 `helpui test` output contract
+### [D] 6.6 `helpui test` 的输出契约
 
-`helpui test <dir>` takes **no `--json` flag** — unlike `scan`, JSON is its only
-output format, so a `--json` argument is a usage error (exit `2`). It prints one
-envelope on stdout and exits `0` only when every check passed:
+`helpui test <dir>` **没有 `--json` 开关**——与 `scan` 不同，JSON 是它唯一的输出格式，
+所以传 `--json` 属于用法错误（退出码 `2`）。它在标准输出上打印一个信封，
+且只有当所有检查都通过时才退出 `0`：
 
 ```json
 {
@@ -371,141 +339,130 @@ envelope on stdout and exits `0` only when every check passed:
 }
 ```
 
-`ok` follows the same string convention as `scan` (§6.2). There are **13**
-checks, ordered cheapest-first so an early failure short-circuits the expensive
-ones:
+`ok` 遵循与 `scan` 相同的字符串约定（§6.2）。共 **13** 项检查，
+按代价从低到高排序，以便早期失败能短路掉昂贵的检查：
 
-| Check | Asserts |
+| 检查项 | 断言内容 |
 |---|---|
-| `project_exists` | the directory holds `app.py` and `spec.json` |
-| `spec_loads` | `spec.json` round-trips to a `CLISpec` |
-| `app_imports` | `helpui_app.app` imports in a subprocess |
-| `app_boots_factory` | `create_app()` returns an application |
-| `app_boots` | the app starts (`TestClient`) |
+| `project_exists` | 目录里有 `app.py` 和 `spec.json` |
+| `spec_loads` | `spec.json` 能往返成 `CLISpec` |
+| `app_imports` | 在子进程里能导入 `helpui_app.app` |
+| `app_boots_factory` | `create_app()` 返回一个应用对象 |
+| `app_boots` | 应用能启动（`TestClient`） |
 | `index_responds` | `GET /` → 200 |
 | `history_responds` | `GET /history` → 200 |
 | `api_spec_responds` | `GET /api/spec` → 200 |
 | `static_assets` | `GET /static/style.css` → 200 |
-| `form_renders` | every command's form page → 200 |
-| `submit_job` | a real submission runs and records a row |
-| `history_recorded` | the run is visible in history |
-| `api_run_roundtrip` | the run is readable over the API |
+| `form_renders` | 每个命令的表单页 → 200 |
+| `submit_job` | 真实提交一次运行并记录一行 |
+| `history_recorded` | 该次运行在历史里可见 |
+| `api_run_roundtrip` | 该次运行可通过 API 读回 |
 
 ---
 
-## 7. Testing decisions
+## 7. 测试决策
 
-### [D] 7.1 Tests drive the real fixtures, not hand-written help strings
+### [D] 7.1 测试驱动真实 fixture，而不是手写的 help 字符串
 
-Every parser test runs the actual `tests/fixtures/sample_*.py` through the
-scanner (`tests/conftest.help_text`). Hand-written help strings drift from what
-the libraries really emit — this approach caught five real bugs in Phase 1,
-including:
+每个解析器测试都把真实的 `tests/fixtures/sample_*.py` 通过扫描器跑一遍
+（`tests/conftest.help_text`）。手写的 help 字符串会与库真实输出的内容产生偏移——
+这个做法在阶段 1 抓出了五个真实 bug，包括：
 
-* a wrapped argparse `usage:` line being parsed as the description;
-* argparse's epilog being parsed as a phantom option;
-* `{json,csv,tsv}` in a subcommand's usage line being expanded into fake
-  subcommands (`convert json`, `convert csv`, ...);
-* typer's box-drawing panels losing their section headers;
-* typer's `--output -o` losing the short alias.
+* argparse 折行的 `usage:` 行被解析成描述；
+* argparse 的 epilog 被解析成一个幽灵选项；
+* 子命令 usage 行里的 `{json,csv,tsv}` 被展开成假的子命令
+  （`convert json`、`convert csv`，……）；
+* typer 的制表符面板丢失了分节标题；
+* typer 的 `--output -o` 丢失了短选项别名。
 
-### [D] 7.2 A fixed width is forced for fixture subprocesses
+### [D] 7.2 fixture 子进程强制固定宽度
 
-`COLUMNS=100`, `LINES=50`, `TERM=dumb`, `NO_COLOR=1` are set for every fixture
-subprocess. Without this, argparse/click/typer reflow usage text to the terminal
-width and the parse (and the Phase 2 golden files) would differ between an
-80-column CI runner and a 120-column developer terminal.
+每个 fixture 子进程都设置 `COLUMNS=100`、`LINES=50`、`TERM=dumb`、`NO_COLOR=1`。
+否则 argparse／click／typer 会把 usage 文本按终端宽度折行，
+解析结果（以及阶段 2 的 golden 文件）在 80 列的 CI 机器和 120 列的开发者终端上
+就会不同。
 
-### [D] 7.3 Fixtures are runnable tools, not just help text
+### [D] 7.3 fixture 是可运行的工具，不只是 help 文本
 
-The fixtures accept real arguments and do real (harmless) work, so the same
-scripts serve the parser tests (§7.1), the generator golden tests, and the
-end-to-end test in `tests/test_e2e.py`.
+fixture 接受真实参数并做真实（无害）的工作，
+所以同一批脚本同时服务于解析器测试（§7.1）、生成器 golden 测试，
+以及 `tests/test_e2e.py` 里的端到端测试。
 
-### [D] 7.4 The end-to-end test runs whole projects
+### [D] 7.4 端到端测试跑的是完整项目
 
-`test_e2e.py` generates a real project for each fixture, boots it through the
-same `helpui.selftest` code path that `helpui test` uses (§6.6), submits a job
-and walks the resulting pages and API. A generator or template defect is only
-visible at this level: `templates/record.html` once iterated a dict as
-`{% for key, value in record.params %}` (Jinja2 yields keys, so unpacking raised
-`ValueError: too many values to unpack`), which returned `500` for the run
-**detail** page while `GET /` and `GET /history` stayed healthy. The end-to-end
-test now fetches the detail page *after* a run with parameters exists, so this
-class of defect fails loudly.
-
----
-
-## 8. Cross-phase contracts established in Phase 1
-
-These are recorded now because later phases depend on them:
-
-1. `CLISpec.to_dict()/from_dict()` is the `spec.json` format. Round-trip
-   equality is tested, and unknown keys are ignored for forward compatibility.
-2. Every parser implements `parse()` and `parse_subcommand()`. A subcommand page
-   is parsed with the same code as a root page; the only difference is the
-   removal of subcommand artifacts (echoed command name, `COMMAND` metavar).
-3. `ScanFailure.code` values (§6.3) are the error vocabulary for `scan`.
-4. `GenerationResult`, `SelfTestResult`/`Check` and `serve_project` are declared
-   with final signatures, so phase 2/3/5 implement rather than redesign.
+`test_e2e.py` 为每个 fixture 生成一个真实项目，通过与 `helpui test` 相同的
+`helpui.selftest` 代码路径启动它（§6.6），提交一次任务，
+然后走一遍产生的页面和 API。生成器或模板的缺陷只有在这个层级才看得见：
+`templates/record.html` 曾经把 dict 迭代写成
+`{% for key, value in record.params %}`（Jinja2 迭代 dict 时只产出键，
+所以解包会抛 `ValueError: too many values to unpack`），
+这使运行的 **详情** 页返回 `500`，而 `GET /` 和 `GET /history` 仍然正常。
+端到端测试现在会在一份带参数的运行存在 *之后* 抓取详情页，
+所以这一类缺陷会大声失败。
 
 ---
 
-## 9. Generator decisions (Phase 2)
+## 8. 阶段 1 建立的跨阶段契约
 
-### [D] 9.1 The generated project is a package, not loose modules
+现在记录这些，是因为后续阶段依赖它们：
 
-The generator writes `helpui_app/` (10 modules) plus a thin root `app.py`,
-rather than a handful of sibling `.py` files. Two reasons:
+1. `CLISpec.to_dict()/from_dict()` 就是 `spec.json` 的格式。往返相等性有测试覆盖，
+   未知键会被忽略以保持向前兼容。
+2. 每个解析器都实现 `parse()` 和 `parse_subcommand()`。子命令页与根页用同一套代码解析；
+   唯一的区别是去掉子命令的痕迹（回显的命令名、`COMMAND` metavar）。
+3. `ScanFailure.code` 的取值（§6.3）是 `scan` 的错误词表。
+4. `GenerationResult`、`SelfTestResult`／`Check` 和 `serve_project` 都以最终签名声明，
+   所以阶段 2／3／5 是去实现，而不是重新设计。
 
-1. Both entry points work without a `sys.path` hack: `python app.py` and
-   `pytest` can each import `helpui_app.*` by name, because the package sits
-   next to the entry point.
-2. A single generic package name keeps generated modules from colliding with the
-   *wrapped tool's* own modules. The tool being wrapped is arbitrary; a generic
-   name like `app.py` or `executor.py` at top level is exactly the name a user's
-   own project is likely to use, and a name clash would silently shadow one of
-   them.
+---
 
-### [D] 9.2 `history.db` is created at runtime, never by the generator
+## 9. 生成器决策（阶段 2）
 
-`generate_project()` writes only source files (`app.py`, `spec.json`,
-`helpui_app/`, `templates/`, `static/`, `README.md`) plus `data/` with a
-`.gitkeep` placeholder. It does **not** create the SQLite file. Keeping the
-generated tree equal to "the set of files a human would commit" means:
+### [D] 9.1 生成的项目是一个包，不是散落的模块
 
-* the output is deterministic and diffable — a golden comparison would otherwise
-  have to cope with a binary artifact whose bytes depend on when it was created;
-* `--force` regeneration has no stale database to reason about;
-* the app creates the file lazily on first use, so a project that is generated
-  but never run leaves no database behind.
+生成器写出 `helpui_app/`（10 个模块）加上一个薄薄的根级 `app.py`，
+而不是一堆平级的 `.py` 文件。两个原因：
 
-### [D] 9.3 Generated text is always written with LF endings
+1. 两个入口点都不需要 `sys.path` 小把戏：`python app.py` 和 `pytest`
+   都能按名字导入 `helpui_app.*`，因为这个包就在入口点旁边。
+2. 用单一的通用包名，可以让生成的模块不与 *被包装工具* 自己的模块撞名。
+   被包装的工具是任意的；像 `app.py` 或 `executor.py` 这样放在顶层的通用名，
+   恰恰是用户自己的项目最可能使用的名字，撞名会静默遮蔽掉其中一方。
 
-All generated text goes through `_write_text_lf()`, which writes bytes with
-`\n` fixed, instead of `Path.write_text()`. On Windows, `write_text` translates
-`\n` to `os.linesep` (`\r\n`), so the *same* generator input would produce
-different bytes on Windows and Linux. That breaks two things at once: golden-file
-comparison (which stores one canonical form) and any content hash. Forcing LF
-makes the output platform-independent, and the generated project is still valid
-Python on Windows because Python accepts LF in source files.
+### [D] 9.2 `history.db` 在运行时创建，生成器绝不创建它
 
-### [D] 9.4 The argv must include the subcommand path
+`generate_project()` 只写源码文件（`app.py`、`spec.json`、`helpui_app/`、
+`templates/`、`static/`、`README.md`）加上一个带 `.gitkeep` 占位符的 `data/`。
+它 **不** 创建 SQLite 文件。让生成的目录树等于「一个人会提交的文件集合」，意味着：
 
-`Command.argv_path()` returns the subcommand name(s) — e.g. `["convert"]` or
-`["admin", "reset"]` — and `build_argv(tool, command_path, values)` splices them
-in *before* the options:
+* 输出是确定且可 diff 的——否则 golden 比对就得处理一个字节内容取决于创建时间的
+  二进制产物；
+* `--force` 重新生成时没有任何陈旧数据库需要考虑；
+* 应用在首次使用时才惰性创建该文件，所以生成后从未运行过的项目不会留下数据库。
+
+### [D] 9.3 生成的文本一律以 LF 结尾
+
+所有生成的文本都经过 `_write_text_lf()`。它固定用 `\n` 写字节，
+而不是用 `Path.write_text()`。在 Windows 上，`write_text` 会把 `\n`
+转换成 `os.linesep`（`\r\n`），于是 *同样的* 生成器输入在 Windows 和 Linux 上
+会产生不同的字节。这会同时破坏两件事：golden 文件比对（它只存一种规范形式）
+以及任何内容哈希。强制 LF 让输出与平台无关，
+而生成的项目在 Windows 上仍是合法的 Python，因为 Python 接受源码里的 LF。
+
+### [D] 9.4 argv 必须包含子命令路径
+
+`Command.argv_path()` 返回子命令名——例如 `["convert"]` 或 `["admin", "reset"]`——
+而 `build_argv(tool, command_path, values)` 把它们拼在选项 *之前*：
 
 ```
 argv = [*tool, *command_path, ...options and positionals...]
 ```
 
-Without the subcommand name, click and argparse subparsers reject **every**
-option with "no such option", because the options are declared on the
-subcommand, not on the root parser. The generated project therefore treats the
-command path as a required part of the invocation, not as metadata.
+缺少子命令名时，click 和 argparse 的子解析器会用 "no such option" 拒绝 **每一个**
+选项，因为这些选项声明在子命令上，而不是根解析器上。
+因此生成的项目把命令路径视为调用的必需组成部分，而不是元数据。
 
-### [D] 9.5 `build_argv` is a three-part signature, and never joins strings
+### [D] 9.5 `build_argv` 是三段式签名，且从不拼接字符串
 
 ```python
 def build_argv(
@@ -515,73 +472,65 @@ def build_argv(
 ) -> list[str]: ...
 ```
 
-Splitting `tool` from `command_path` mirrors §9.4: they are conceptually
-different things (what to run vs. which subcommand to run) and the subcommand is
-supplied by the command definition rather than by the form. `values` pairs a
-flag with its values so an option can contribute several argv entries (a
-`multiple=True` option, or one flag per value), and `flag=None` marks a
-positional.
+把 `tool` 与 `command_path` 分开呼应了 §9.4：
+它们在概念上是不同的东西（要运行什么 vs. 要运行哪个子命令），
+而且子命令是由命令定义提供的，不是由表单提供的。
+`values` 把一个 flag 与它的值配对，这样一个选项就能贡献多个 argv 项
+（一个 `multiple=True` 的选项，或每个值一个 flag），
+而 `flag=None` 标记位置参数。
 
-Every entry is appended individually — there is no string joining anywhere in
-the function. That is what makes the §5.1 no-shell guarantee hold all the way
-through the generated app: the argv handed to `subprocess` is a list of literal
-arguments, so no user-supplied value can be reinterpreted as shell syntax.
+每一项都是单独追加的——这个函数里没有任何字符串拼接。
+正是这一点让 §5.1 的无 shell 保证一路贯穿到生成的应用里：
+交给 `subprocess` 的 argv 是一串字面量参数，
+所以任何用户提供的值都无法被重新解释成 shell 语法。
 
-### [D] 9.6 `type='file'` fields are multipart-only
+### [D] 9.6 `type='file'` 字段只走 multipart
 
-A field whose `CLIOption.type` is `file` — whether it is an option or a
-positional — takes its value **only** from a multipart file upload. A plain text
-value for that field is not recognised and counts as **not provided**; if the
-field is required, submission fails with `<dest> is required`.
+`CLIOption.type` 为 `file` 的字段——无论是选项还是位置参数——
+**只** 从 multipart 文件上传中取值。该字段收到纯文本值时不会被识别，
+**等同于未提供**；若该字段必填，提交会以 `<dest> is required` 失败。
 
-A form field that should accept a typed path must therefore be declared `str`
-(a text input), not `file`. This is a deliberate consequence of `file` meaning
-"the user picks a file in the browser and its contents/path are uploaded",
-rather than "the user types a path".
+因此，应当接受手输路径的表单字段必须声明为 `str`（文本框），而不是 `file`。
+这是「`file` 的含义是用户在浏览器里选中一个文件并上传其内容／路径」，
+而不是「用户输入一个路径」所导致的刻意结果。
 
-### [D] 9.7 Blocking execution must go through the threadpool
+### [D] 9.7 阻塞执行必须走线程池
 
-`run_command` calls the blocking `execute()` through
-`run_in_threadpool`, and must keep doing so. FastAPI dispatches `async def`
-routes on the event loop thread and does **not** move them to the threadpool;
-calling a blocking `subprocess` wait directly from an `async def` route would
-stall the entire server for the duration of the child process — no other request
-would be served, including the live-log and cancel endpoints that are supposed to
-observe that very run.
+`run_command` 通过 `run_in_threadpool` 调用阻塞的 `execute()`，并且必须保持如此。
+FastAPI 把 `async def` 路由派发到事件循环线程上，**不会** 把它们移到线程池；
+在 `async def` 路由里直接调用阻塞的 `subprocess` 等待，
+会在子进程运行的整个期间卡住整个服务器——不会有任何其他请求被服务，
+包括本应用来观察这次运行的实时日志和取消端点。
 
-### [L] 9.8 `HELPUI_TIMEOUT=0` or negative is undefined
+### [L] 9.8 `HELPUI_TIMEOUT=0` 或负值行为未定义
 
-The per-run timeout is read from `HELPUI_TIMEOUT`. A value of `0` or a negative
-value has no defined meaning — it is neither "no timeout" nor "expire
-immediately". Unset (or unparseable) falls back to the documented default.
-Recorded so that the absence of validation is deliberate; a future version should
-either reject these values or define them.
+每次运行的超时从 `HELPUI_TIMEOUT` 读取。值为 `0` 或负数没有定义的含义——
+它既不是「不超时」，也不是「立即超时」。
+未设置（或无法解析）时回落到文档所述的默认值。
+记录于此，是为了说明「缺少校验」是有意为之；
+将来的版本应当要么拒绝这些值，要么定义它们。
 
 ---
 
-## 10. Methodology
+## 10. 方法论
 
-### [D] 10.1 Probe *timing* matters more than probe *count*
+### [D] 10.1 探针的 *时机* 比探针的 *数量* 更重要
 
-A concrete Phase-2 lesson, kept because it cost real time.
+一个阶段 2 的具体教训，保留下来是因为它耗费了真实时间。
 
-A cancel/timeout investigation measured the cancellation path with **four
-concurrent probes** and read a suspicious ~4 ms latency. That number seemed to
-rule out "the event loop is blocked", so the hypothesis was discarded. It was
-right. The probes had been started *before* the blocking call began, so they were
-measuring an idle loop, not a stalled one: the correct reading is that a probe
-issued *during* the blocking wait takes as long as the wait.
+一次取消／超时的排查用 **四个并发探针** 测量取消路径，读到一个可疑的约 4 毫秒延迟。
+这个数字看起来排除了「事件循环被阻塞」的可能，于是该假设被丢弃了。但它其实是对的。
+这些探针是在阻塞调用 *开始之前* 启动的，所以它们测量的是一个空闲的循环，
+而不是一个被卡住的循环：正确的解读是，在阻塞等待 *期间* 发出的探针，
+其耗时应该与等待时间相当。
 
-**The general rule:** for a concurrency or blocking defect, *when* a probe is
-issued relative to the suspected blocking window determines whether it can see
-the defect at all. A probe that finishes quickly is not evidence that the bug is
-absent — it may simply have missed the window. Concurrency probes must be
-anchored to the moment of the suspected stall (issued from inside the window, or
-timed against a known-blocked period), and a "fast" result from an unanchored
-probe should be treated as inconclusive rather than exculpatory.
+**通用规则：** 对于并发或阻塞类缺陷，探针相对疑似阻塞窗口的 *发出时机*，
+决定了它究竟能否看见这个缺陷。一个很快结束的探针，并不能证明缺陷不存在——
+它可能只是错过了那个窗口。并发探针必须锚定在疑似卡顿的时刻
+（从窗口内部发出，或对一个已知被阻塞的时段计时），
+而未锚定的探针给出「很快」的结果，应当视为「不能说明问题」，而不是「足以排除」。
 
-The same discipline applied throughout this project: every claim in these
-documents was checked against real command output rather than against intent, and
-several confident assertions (including the count of Phase-1 bugs, the shape of
-the `scan` JSON example, and an "argparse prints `[required]`" explanation) were
-wrong until measured. **Probe first, then write.**
+同样的纪律贯穿了整个项目：本文档里的每一条断言，都是对着真实命令输出来核实的，
+而不是对着意图核实的；若干自信的断言（包括阶段 1 bug 的数量、
+`scan` JSON 示例的形状，以及一个「argparse 会打印 `[required]`」的解释）
+在实测之前都是错的。**先探测，再下笔。**

@@ -1,0 +1,25 @@
+# Normalise line endings in the repository.
+#
+# Why this file exists: HelpUI generates web projects by copying the packaged
+# templates and static assets, and its golden tests assert those copies are
+# **byte-for-byte identical** to the packaged source. With git's default
+# `core.autocrlf=true` on Windows, a fresh clone would rewrite the templates to
+# CRLF while the generator writes LF, so the golden comparison would fail on a
+# clean checkout even though the working tree looked fine locally.
+#
+# Forcing LF in the repository (and telling git not to convert on checkout)
+# makes generation reproducible across platforms: same input -> same bytes.
+* text=auto eol=lf
+
+# Binary assets must never be touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.zstd binary
+*.db binary
+
+# Minified third-party asset: vendored verbatim, not ours to reformat.
+helpui/static/htmx.min.js -text
